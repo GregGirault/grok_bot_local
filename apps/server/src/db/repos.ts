@@ -13,18 +13,18 @@ import type {
   ChannelMessage,
   BackgroundTask,
   MessageKind,
+  Machine,
+  TeamMember,
+  Project,
+  ApprovalRequest,
+  RoutineRun,
+  AttachmentInfo,
 } from '@grok-bot/shared';
 import type { Db } from './schema';
 
 const COLORS = [
-  '#8b5cf6',
-  '#06b6d4',
-  '#10b981',
-  '#f59e0b',
-  '#ef4444',
-  '#ec4899',
-  '#3b82f6',
-  '#84cc16',
+  '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b',
+  '#ef4444', '#ec4899', '#3b82f6', '#84cc16',
 ];
 
 function pickColor(seed: string): string {
@@ -45,6 +45,18 @@ function parseMeta(raw: unknown): ChatMessage['meta'] {
   return undefined;
 }
 
+function parseAttachments(raw: unknown): AttachmentInfo[] | undefined {
+  if (!raw) return undefined;
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw) as AttachmentInfo[];
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 function rowToAgent(r: Record<string, unknown>): Agent {
   return {
     id: r.id as string,
@@ -54,6 +66,8 @@ function rowToAgent(r: Record<string, unknown>): Agent {
     systemPrompt: r.system_prompt as string,
     avatarColor: (r.avatar_color as string) || pickColor(r.name as string),
     avatarShape: ((r.avatar_shape as string) || 'circle') as Agent['avatarShape'],
+    hidden: Boolean(r.hidden),
+    notifyOnUpdates: r.notify_on_updates === undefined ? true : Boolean(r.notify_on_updates),
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
   };
@@ -69,6 +83,8 @@ function rowToMessage(r: Record<string, unknown>): ChatMessage {
     meta: parseMeta(r.meta),
     toolName: (r.tool_name as string) || undefined,
     toolCallId: (r.tool_call_id as string) || undefined,
+    attachments: parseAttachments(r.attachments),
+    editedAt: (r.edited_at as string) || undefined,
     createdAt: r.created_at as string,
   };
 }
@@ -81,6 +97,8 @@ function rowToMemory(r: Record<string, unknown>): MemoryEntry {
     value: r.value as string,
     tier: ((r.tier as string) || 'note') as MemoryEntry['tier'],
     scope: ((r.scope as string) || 'agent') as MemoryEntry['scope'],
+    projectId: (r.project_id as string) || undefined,
+    pinned: Boolean(r.pinned),
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
   };
@@ -95,6 +113,7 @@ function rowToRoutine(r: Record<string, unknown>): Routine {
     prompt: r.prompt as string,
     enabled: Boolean(r.enabled),
     quietIfEmpty: Boolean(r.quiet_if_empty),
+    webhookToken: (r.webhook_token as string) || undefined,
     lastRunAt: (r.last_run_at as string) || undefined,
     createdAt: r.created_at as string,
   };
@@ -103,9 +122,16 @@ function rowToRoutine(r: Record<string, unknown>): Routine {
 export class AgentRepo {
   constructor(private db: Db) {}
 
-  list(): Agent[] {
+  list(includeHidden = false): Agent[] {
+    const sql = includeHidden
+      ? 'SELECT * FROM agents ORDER BY name'
+      : 'SELECT * FROM agents WHERE hidden = 0 ORDER BY name';
+    return this.db.prepare(sql).all().map((r) => rowToAgent(r as Record<string, unknown>));
+  }
+
+  listHidden(): Agent[] {
     return this.db
-      .prepare('SELECT * FROM agents ORDER BY name')
+      .prepare('SELECT * FROM agents WHERE hidden = 1 ORDER BY name')
       .all()
       .map((r) => rowToAgent(r as Record<string, unknown>));
   }
@@ -127,8 +153,8 @@ export class AgentRepo {
     const shape = input.avatarShape || 'circle';
     this.db
       .prepare(
-        `INSERT INTO agents (id, name, title, description, system_prompt, avatar_color, avatar_shape, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO agents (id, name, title, description, system_prompt, avatar_color, avatar_shape, hidden, notify_on_updates, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
       )
       .run(
         id,
@@ -138,6 +164,7 @@ export class AgentRepo {
         input.systemPrompt ?? 'You are a helpful assistant.',
         color,
         shape,
+        input.notifyOnUpdates === false ? 0 : 1,
         now,
         now
       );
@@ -151,7 +178,7 @@ export class AgentRepo {
     this.db
       .prepare(
         `UPDATE agents SET name = ?, title = ?, description = ?, system_prompt = ?,
-         avatar_color = ?, avatar_shape = ?, updated_at = ? WHERE id = ?`
+         avatar_color = ?, avatar_shape = ?, hidden = ?, notify_on_updates = ?, updated_at = ? WHERE id = ?`
       )
       .run(
         input.name ?? existing.name,
@@ -160,6 +187,14 @@ export class AgentRepo {
         input.systemPrompt ?? existing.systemPrompt,
         input.avatarColor ?? existing.avatarColor,
         input.avatarShape ?? existing.avatarShape,
+        input.hidden !== undefined ? (input.hidden ? 1 : 0) : existing.hidden ? 1 : 0,
+        input.notifyOnUpdates !== undefined
+          ? input.notifyOnUpdates
+            ? 1
+            : 0
+          : existing.notifyOnUpdates
+            ? 1
+            : 0,
         now,
         id
       );
@@ -188,10 +223,11 @@ export class MessageRepo {
     const createdAt = msg.createdAt ?? new Date().toISOString();
     const kind = msg.kind ?? 'text';
     const meta = msg.meta ? JSON.stringify(msg.meta) : null;
+    const attachments = msg.attachments ? JSON.stringify(msg.attachments) : null;
     this.db
       .prepare(
-        `INSERT INTO messages (id, agent_id, role, content, kind, meta, tool_name, tool_call_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO messages (id, agent_id, role, content, kind, meta, tool_name, tool_call_id, attachments, edited_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -202,6 +238,8 @@ export class MessageRepo {
         meta,
         msg.toolName ?? null,
         msg.toolCallId ?? null,
+        attachments,
+        msg.editedAt ?? null,
         createdAt
       );
     return {
@@ -213,8 +251,18 @@ export class MessageRepo {
       meta: msg.meta,
       toolName: msg.toolName,
       toolCallId: msg.toolCallId,
+      attachments: msg.attachments,
+      editedAt: msg.editedAt,
       createdAt,
     };
+  }
+
+  updateContent(id: string, content: string): ChatMessage | null {
+    const now = new Date().toISOString();
+    this.db
+      .prepare('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?')
+      .run(content, now, id);
+    return this.get(id);
   }
 
   updateMeta(id: string, meta: ChatMessage['meta'], content?: string): void {
@@ -232,6 +280,14 @@ export class MessageRepo {
     return r ? rowToMessage(r as Record<string, unknown>) : null;
   }
 
+  deleteFrom(id: string, agentId: string): void {
+    const msg = this.get(id);
+    if (!msg || msg.agentId !== agentId) return;
+    this.db
+      .prepare('DELETE FROM messages WHERE agent_id = ? AND created_at >= ?')
+      .run(agentId, msg.createdAt);
+  }
+
   clear(agentId: string): void {
     this.db.prepare('DELETE FROM messages WHERE agent_id = ?').run(agentId);
   }
@@ -240,10 +296,18 @@ export class MessageRepo {
 export class MemoryRepo {
   constructor(private db: Db) {}
 
-  list(agentId?: string): MemoryEntry[] {
+  list(agentId?: string, projectId?: string): MemoryEntry[] {
+    if (projectId) {
+      return this.db
+        .prepare('SELECT * FROM memory WHERE project_id = ? ORDER BY key')
+        .all(projectId)
+        .map((r) => rowToMemory(r as Record<string, unknown>));
+    }
     if (agentId) {
       return this.db
-        .prepare('SELECT * FROM memory WHERE agent_id = ? ORDER BY key')
+        .prepare(
+          `SELECT * FROM memory WHERE agent_id = ? OR scope = 'user' ORDER BY key`
+        )
         .all(agentId)
         .map((r) => rowToMemory(r as Record<string, unknown>));
     }
@@ -253,12 +317,19 @@ export class MemoryRepo {
       .map((r) => rowToMemory(r as Record<string, unknown>));
   }
 
+  listUserGlobal(): MemoryEntry[] {
+    return this.db
+      .prepare(`SELECT * FROM memory WHERE scope = 'user' ORDER BY key`)
+      .all()
+      .map((r) => rowToMemory(r as Record<string, unknown>));
+  }
+
   search(query: string, agentId?: string): MemoryEntry[] {
     const q = `%${query.toLowerCase()}%`;
     if (agentId) {
       return this.db
         .prepare(
-          `SELECT * FROM memory WHERE agent_id = ? AND (lower(key) LIKE ? OR lower(value) LIKE ?) ORDER BY key`
+          `SELECT * FROM memory WHERE (agent_id = ? OR scope = 'user') AND (lower(key) LIKE ? OR lower(value) LIKE ?) ORDER BY key`
         )
         .all(agentId, q, q)
         .map((r) => rowToMemory(r as Record<string, unknown>));
@@ -274,7 +345,9 @@ export class MemoryRepo {
     key: string,
     value: string,
     tier: MemoryEntry['tier'] = 'note',
-    scope: MemoryEntry['scope'] = 'agent'
+    scope: MemoryEntry['scope'] = 'agent',
+    projectId?: string,
+    pinned?: boolean
   ): MemoryEntry {
     const now = new Date().toISOString();
     const existing = this.db
@@ -282,33 +355,68 @@ export class MemoryRepo {
       .get(agentId, key) as Record<string, unknown> | undefined;
     if (existing) {
       this.db
-        .prepare('UPDATE memory SET value = ?, tier = ?, scope = ?, updated_at = ? WHERE id = ?')
-        .run(value, tier ?? 'note', scope ?? 'agent', now, existing.id);
-      return rowToMemory({
-        ...existing,
-        value,
-        tier: tier ?? 'note',
-        scope: scope ?? 'agent',
-        updated_at: now,
-      });
+        .prepare(
+          'UPDATE memory SET value = ?, tier = ?, scope = ?, project_id = ?, pinned = ?, updated_at = ? WHERE id = ?'
+        )
+        .run(
+          value,
+          tier ?? 'note',
+          scope ?? 'agent',
+          projectId ?? existing.project_id ?? null,
+          pinned !== undefined ? (pinned ? 1 : 0) : existing.pinned ? 1 : 0,
+          now,
+          existing.id
+        );
+      return rowToMemory(
+        this.db.prepare('SELECT * FROM memory WHERE id = ?').get(existing.id as string) as Record<string, unknown>
+      );
     }
     const id = uuid();
     this.db
       .prepare(
-        `INSERT INTO memory (id, agent_id, key, value, tier, scope, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO memory (id, agent_id, key, value, tier, scope, project_id, pinned, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(id, agentId, key, value, tier ?? 'note', scope ?? 'agent', now, now);
-    return {
-      id,
-      agentId,
-      key,
-      value,
-      tier: tier ?? 'note',
-      scope: scope ?? 'agent',
-      createdAt: now,
-      updatedAt: now,
-    };
+      .run(
+        id,
+        agentId,
+        key,
+        value,
+        tier ?? 'note',
+        scope ?? 'agent',
+        projectId ?? null,
+        pinned ? 1 : 0,
+        now,
+        now
+      );
+    return rowToMemory(
+      this.db.prepare('SELECT * FROM memory WHERE id = ?').get(id) as Record<string, unknown>
+    );
+  }
+
+  pin(id: string, pinned: boolean): MemoryEntry | null {
+    const r = this.db.prepare('SELECT * FROM memory WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
+    if (!r) return null;
+    let tier = r.tier as string;
+    if (pinned && tier === 'note') tier = 'profile';
+    this.db
+      .prepare('UPDATE memory SET pinned = ?, tier = ?, updated_at = ? WHERE id = ?')
+      .run(pinned ? 1 : 0, tier, new Date().toISOString(), id);
+    return rowToMemory(
+      this.db.prepare('SELECT * FROM memory WHERE id = ?').get(id) as Record<string, unknown>
+    );
+  }
+
+  promoteStale(days = 7): number {
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+    const res = this.db
+      .prepare(
+        `UPDATE memory SET tier = 'log', updated_at = ? WHERE tier = 'note' AND pinned = 0 AND created_at < ?`
+      )
+      .run(new Date().toISOString(), cutoff);
+    return res.changes;
   }
 
   forget(agentId: string, key: string): boolean {
@@ -322,10 +430,18 @@ export class MemoryRepo {
     return this.db.prepare('DELETE FROM memory WHERE id = ?').run(id).changes > 0;
   }
 
-  formatForPrompt(agentId: string): string {
-    const entries = this.list(agentId);
-    if (!entries.length) return '';
-    const lines = entries.map((e) => `- [${e.tier}/${e.scope}] ${e.key}: ${e.value}`);
+  formatForPrompt(agentId: string, projectId?: string): string {
+    const entries = this.list(agentId, projectId);
+    const userGlobal = this.listUserGlobal().filter((e) => e.agentId !== agentId);
+    const all = [...entries];
+    for (const u of userGlobal) {
+      if (!all.find((a) => a.id === u.id)) all.push(u);
+    }
+    if (!all.length) return '';
+    const lines = all.map(
+      (e) =>
+        `- [${e.tier}/${e.scope}${e.projectId ? '/proj' : ''}${e.pinned ? '/pin' : ''}] ${e.key}: ${e.value}`
+    );
     return `\n\n## Persistent memory\n${lines.join('\n')}`;
   }
 }
@@ -351,13 +467,19 @@ export class RoutineRepo {
     return r ? rowToRoutine(r as Record<string, unknown>) : null;
   }
 
+  getByToken(token: string): Routine | null {
+    const r = this.db.prepare('SELECT * FROM routines WHERE webhook_token = ?').get(token);
+    return r ? rowToRoutine(r as Record<string, unknown>) : null;
+  }
+
   create(input: CreateRoutineInput): Routine {
     const id = uuid();
     const now = new Date().toISOString();
+    const token = uuid().replace(/-/g, '').slice(0, 24);
     this.db
       .prepare(
-        `INSERT INTO routines (id, agent_id, name, cron, prompt, enabled, quiet_if_empty, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO routines (id, agent_id, name, cron, prompt, enabled, quiet_if_empty, webhook_token, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -367,6 +489,7 @@ export class RoutineRepo {
         input.prompt,
         input.enabled === false ? 0 : 1,
         input.quietIfEmpty ? 1 : 0,
+        token,
         now
       );
     return this.get(id)!;
@@ -374,7 +497,9 @@ export class RoutineRepo {
 
   update(
     id: string,
-    patch: Partial<Pick<Routine, 'name' | 'cron' | 'prompt' | 'enabled' | 'lastRunAt' | 'quietIfEmpty'>>
+    patch: Partial<
+      Pick<Routine, 'name' | 'cron' | 'prompt' | 'enabled' | 'lastRunAt' | 'quietIfEmpty'>
+    >
   ): Routine | null {
     const existing = this.get(id);
     if (!existing) return null;
@@ -404,6 +529,39 @@ export class RoutineRepo {
   delete(id: string): boolean {
     return this.db.prepare('DELETE FROM routines WHERE id = ?').run(id).changes > 0;
   }
+
+  addRun(routineId: string, status: RoutineRun['status'], output?: string, error?: string): RoutineRun {
+    const id = uuid();
+    const createdAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO routine_runs (id, routine_id, status, output, error, created_at) VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(id, routineId, status, output ?? null, error ?? null, createdAt);
+    return { id, routineId, status, output, error, createdAt };
+  }
+
+  listRuns(routineId?: string, limit = 50): RoutineRun[] {
+    const rows = (
+      routineId
+        ? this.db
+            .prepare(
+              `SELECT * FROM routine_runs WHERE routine_id = ? ORDER BY created_at DESC LIMIT ?`
+            )
+            .all(routineId, limit)
+        : this.db
+            .prepare(`SELECT * FROM routine_runs ORDER BY created_at DESC LIMIT ?`)
+            .all(limit)
+    ) as Array<Record<string, unknown>>;
+    return rows.map((r) => ({
+      id: r.id as string,
+      routineId: r.routine_id as string,
+      status: r.status as RoutineRun['status'],
+      output: (r.output as string) || undefined,
+      error: (r.error as string) || undefined,
+      createdAt: r.created_at as string,
+    }));
+  }
 }
 
 export class SettingsRepo {
@@ -420,6 +578,11 @@ export class SettingsRepo {
       ollamaBaseUrl: map.ollamaBaseUrl || 'http://127.0.0.1:11434',
       defaultModel: map.defaultModel || 'qwen2.5:7b',
       workspaceRoot: map.workspaceRoot || '',
+      theme: (map.theme as Settings['theme']) || 'dark',
+      language: (map.language as Settings['language']) || 'en',
+      accentColor: map.accentColor || '#8b5cf6',
+      taskConcurrency: Number(map.taskConcurrency || '2') || 2,
+      githubRepo: map.githubRepo || 'GregGirault/grok_bot_local',
     };
   }
 
@@ -518,6 +681,18 @@ export class ChannelRepo {
     return this.get(id)!;
   }
 
+  addMember(channelId: string, agentId: string): void {
+    this.db
+      .prepare(`INSERT OR IGNORE INTO channel_members (channel_id, agent_id) VALUES (?, ?)`)
+      .run(channelId, agentId);
+  }
+
+  removeMember(channelId: string, agentId: string): void {
+    this.db
+      .prepare(`DELETE FROM channel_members WHERE channel_id = ? AND agent_id = ?`)
+      .run(channelId, agentId);
+  }
+
   postMessage(channelId: string, content: string, fromAgentId?: string): ChannelMessage {
     const id = uuid();
     const createdAt = new Date().toISOString();
@@ -569,14 +744,26 @@ export class TaskRepo {
     return r ? this.row(r) : null;
   }
 
-  create(agentId: string, prompt: string): BackgroundTask {
+  create(
+    agentId: string,
+    prompt: string,
+    opts?: { parentTaskId?: string; postToChat?: boolean }
+  ): BackgroundTask {
     const id = uuid();
     const createdAt = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT INTO tasks (id, agent_id, prompt, status, created_at) VALUES (?, ?, ?, 'queued', ?)`
+        `INSERT INTO tasks (id, agent_id, prompt, status, parent_task_id, post_to_chat, created_at)
+         VALUES (?, ?, ?, 'queued', ?, ?, ?)`
       )
-      .run(id, agentId, prompt, createdAt);
+      .run(
+        id,
+        agentId,
+        prompt,
+        opts?.parentTaskId ?? null,
+        opts?.postToChat === false ? 0 : 1,
+        createdAt
+      );
     return this.get(id)!;
   }
 
@@ -608,9 +795,338 @@ export class TaskRepo {
       status: r.status as BackgroundTask['status'],
       result: (r.result as string) || undefined,
       error: (r.error as string) || undefined,
+      parentTaskId: (r.parent_task_id as string) || undefined,
+      postToChat: r.post_to_chat === undefined ? true : Boolean(r.post_to_chat),
       createdAt: r.created_at as string,
       finishedAt: (r.finished_at as string) || undefined,
     };
   }
 }
 
+export class MachineRepo {
+  constructor(private db: Db) {}
+
+  list(): Machine[] {
+    return (
+      this.db.prepare('SELECT * FROM machines ORDER BY name').all() as Array<
+        Record<string, unknown>
+      >
+    ).map((r) => ({
+      id: r.id as string,
+      name: r.name as string,
+      host: r.host as string,
+      path: r.path as string,
+      createdAt: r.created_at as string,
+    }));
+  }
+
+  get(id: string): Machine | null {
+    const r = this.db.prepare('SELECT * FROM machines WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
+    if (!r) return null;
+    return {
+      id: r.id as string,
+      name: r.name as string,
+      host: r.host as string,
+      path: r.path as string,
+      createdAt: r.created_at as string,
+    };
+  }
+
+  create(name: string, host: string, pathVal: string): Machine {
+    const id = uuid();
+    const createdAt = new Date().toISOString();
+    this.db
+      .prepare(`INSERT INTO machines (id, name, host, path, created_at) VALUES (?, ?, ?, ?, ?)`)
+      .run(id, name, host || 'localhost', pathVal || '', createdAt);
+    return this.get(id)!;
+  }
+
+  update(id: string, patch: Partial<Pick<Machine, 'name' | 'host' | 'path'>>): Machine | null {
+    const existing = this.get(id);
+    if (!existing) return null;
+    this.db
+      .prepare(`UPDATE machines SET name = ?, host = ?, path = ? WHERE id = ?`)
+      .run(patch.name ?? existing.name, patch.host ?? existing.host, patch.path ?? existing.path, id);
+    return this.get(id);
+  }
+
+  delete(id: string): boolean {
+    return this.db.prepare('DELETE FROM machines WHERE id = ?').run(id).changes > 0;
+  }
+}
+
+export class TeamMemberRepo {
+  constructor(private db: Db) {}
+
+  list(): TeamMember[] {
+    return (
+      this.db.prepare('SELECT * FROM team_members ORDER BY name').all() as Array<
+        Record<string, unknown>
+      >
+    ).map((r) => ({
+      id: r.id as string,
+      name: r.name as string,
+      email: (r.email as string) || undefined,
+      role: r.role as string,
+      createdAt: r.created_at as string,
+    }));
+  }
+
+  get(id: string): TeamMember | null {
+    const r = this.db.prepare('SELECT * FROM team_members WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
+    if (!r) return null;
+    return {
+      id: r.id as string,
+      name: r.name as string,
+      email: (r.email as string) || undefined,
+      role: r.role as string,
+      createdAt: r.created_at as string,
+    };
+  }
+
+  create(name: string, email?: string, role = 'member'): TeamMember {
+    const id = uuid();
+    const createdAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO team_members (id, name, email, role, created_at) VALUES (?, ?, ?, ?, ?)`
+      )
+      .run(id, name, email ?? null, role, createdAt);
+    return this.get(id)!;
+  }
+
+  delete(id: string): boolean {
+    return this.db.prepare('DELETE FROM team_members WHERE id = ?').run(id).changes > 0;
+  }
+
+  listForChannel(channelId: string): TeamMember[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT t.* FROM team_members t
+           JOIN channel_team_members c ON c.member_id = t.id
+           WHERE c.channel_id = ? ORDER BY t.name`
+        )
+        .all(channelId) as Array<Record<string, unknown>>
+    ).map((r) => ({
+      id: r.id as string,
+      name: r.name as string,
+      email: (r.email as string) || undefined,
+      role: r.role as string,
+      createdAt: r.created_at as string,
+    }));
+  }
+
+  addToChannel(channelId: string, memberId: string): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO channel_team_members (channel_id, member_id) VALUES (?, ?)`
+      )
+      .run(channelId, memberId);
+  }
+
+  removeFromChannel(channelId: string, memberId: string): void {
+    this.db
+      .prepare(`DELETE FROM channel_team_members WHERE channel_id = ? AND member_id = ?`)
+      .run(channelId, memberId);
+  }
+}
+
+export class ProjectRepo {
+  constructor(private db: Db) {}
+
+  list(): Project[] {
+    return (
+      this.db.prepare('SELECT * FROM projects ORDER BY name').all() as Array<
+        Record<string, unknown>
+      >
+    ).map((r) => ({
+      id: r.id as string,
+      slug: r.slug as string,
+      name: r.name as string,
+      path: r.path as string,
+      description: r.description as string,
+      createdAt: r.created_at as string,
+    }));
+  }
+
+  get(id: string): Project | null {
+    const r = this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
+    if (!r) return null;
+    return {
+      id: r.id as string,
+      slug: r.slug as string,
+      name: r.name as string,
+      path: r.path as string,
+      description: r.description as string,
+      createdAt: r.created_at as string,
+    };
+  }
+
+  getBySlug(slug: string): Project | null {
+    const r = this.db.prepare('SELECT * FROM projects WHERE slug = ?').get(slug) as
+      | Record<string, unknown>
+      | undefined;
+    if (!r) return null;
+    return {
+      id: r.id as string,
+      slug: r.slug as string,
+      name: r.name as string,
+      path: r.path as string,
+      description: r.description as string,
+      createdAt: r.created_at as string,
+    };
+  }
+
+  create(slug: string, name: string, pathVal: string, description: string): Project {
+    const id = uuid();
+    const createdAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO projects (id, slug, name, path, description, created_at) VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(id, slug, name, pathVal || '', description || '', createdAt);
+    return this.get(id)!;
+  }
+
+  update(
+    id: string,
+    patch: Partial<Pick<Project, 'slug' | 'name' | 'path' | 'description'>>
+  ): Project | null {
+    const existing = this.get(id);
+    if (!existing) return null;
+    this.db
+      .prepare(
+        `UPDATE projects SET slug = ?, name = ?, path = ?, description = ? WHERE id = ?`
+      )
+      .run(
+        patch.slug ?? existing.slug,
+        patch.name ?? existing.name,
+        patch.path ?? existing.path,
+        patch.description ?? existing.description,
+        id
+      );
+    return this.get(id);
+  }
+
+  delete(id: string): boolean {
+    return this.db.prepare('DELETE FROM projects WHERE id = ?').run(id).changes > 0;
+  }
+}
+
+export class ApprovalRepo {
+  constructor(private db: Db) {}
+
+  create(agentId: string, toolName: string, command: string): ApprovalRequest {
+    const id = uuid();
+    const createdAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO approvals (id, agent_id, tool_name, command, status, created_at)
+         VALUES (?, ?, ?, ?, 'pending', ?)`
+      )
+      .run(id, agentId, toolName, command, createdAt);
+    return this.get(id)!;
+  }
+
+  get(id: string): ApprovalRequest | null {
+    const r = this.db.prepare('SELECT * FROM approvals WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
+    if (!r) return null;
+    return {
+      id: r.id as string,
+      agentId: r.agent_id as string,
+      toolName: r.tool_name as string,
+      command: r.command as string,
+      status: r.status as ApprovalRequest['status'],
+      createdAt: r.created_at as string,
+      resolvedAt: (r.resolved_at as string) || undefined,
+    };
+  }
+
+  listPending(agentId?: string): ApprovalRequest[] {
+    const rows = (
+      agentId
+        ? this.db
+            .prepare(
+              `SELECT * FROM approvals WHERE status = 'pending' AND agent_id = ? ORDER BY created_at DESC`
+            )
+            .all(agentId)
+        : this.db
+            .prepare(`SELECT * FROM approvals WHERE status = 'pending' ORDER BY created_at DESC`)
+            .all()
+    ) as Array<Record<string, unknown>>;
+    return rows.map((r) => ({
+      id: r.id as string,
+      agentId: r.agent_id as string,
+      toolName: r.tool_name as string,
+      command: r.command as string,
+      status: r.status as ApprovalRequest['status'],
+      createdAt: r.created_at as string,
+      resolvedAt: (r.resolved_at as string) || undefined,
+    }));
+  }
+
+  resolve(id: string, status: 'approved' | 'denied'): ApprovalRequest | null {
+    const existing = this.get(id);
+    if (!existing) return null;
+    this.db
+      .prepare(`UPDATE approvals SET status = ?, resolved_at = ? WHERE id = ?`)
+      .run(status, new Date().toISOString(), id);
+    return this.get(id);
+  }
+}
+
+export class UploadRepo {
+  constructor(private db: Db) {}
+
+  create(
+    name: string,
+    pathVal: string,
+    opts?: { agentId?: string; mime?: string; size?: number }
+  ): AttachmentInfo {
+    const id = uuid();
+    const createdAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO uploads (id, agent_id, name, path, mime, size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        id,
+        opts?.agentId ?? null,
+        name,
+        pathVal,
+        opts?.mime ?? null,
+        opts?.size ?? null,
+        createdAt
+      );
+    return {
+      id,
+      name,
+      path: pathVal,
+      mime: opts?.mime,
+      size: opts?.size,
+    };
+  }
+
+  get(id: string): AttachmentInfo | null {
+    const r = this.db.prepare('SELECT * FROM uploads WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
+    if (!r) return null;
+    return {
+      id: r.id as string,
+      name: r.name as string,
+      path: r.path as string,
+      mime: (r.mime as string) || undefined,
+      size: (r.size as number) || undefined,
+    };
+  }
+}

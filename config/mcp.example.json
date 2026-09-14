@@ -1,6 +1,25 @@
 {
   "servers": [
     {
+      "name": "echo",
+      "command": "node",
+      "args": ["scripts/mcp-echo-server.mjs"],
+      "disabled": false,
+      "tools": [
+        {
+          "name": "echo",
+          "description": "Echo back arguments (live stdio example)",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "message": { "type": "string" }
+            },
+            "required": ["message"]
+          }
+        }
+      ]
+    },
+    {
       "name": "filesystem",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
@@ -16,17 +35,6 @@
             },
             "required": ["path"]
           }
-        }
-      ]
-    },
-    {
-      "name": "remote_demo",
-      "url": "http://127.0.0.1:3100/sse",
-      "disabled": true,
-      "tools": [
-        {
-          "name": "echo",
-          "description": "Echo tool advertised before live session"
         }
       ]
     }

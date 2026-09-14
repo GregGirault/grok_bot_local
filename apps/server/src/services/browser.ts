@@ -5,10 +5,15 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import fs from 'fs';
+import path from 'path';
+import { v4 as uuid } from 'uuid';
+
 let playwrightModule: any = undefined;
 let browserInstance: any = null;
 let pageInstance: any = null;
 let missing = false;
+let lastScreenshotPath: string | null = null;
 
 async function loadPlaywright(): Promise<any> {
   if (missing) {
@@ -63,6 +68,7 @@ export async function browserNavigate(url: string): Promise<string> {
     return JSON.stringify({
       error: e instanceof Error ? e.message : String(e),
       stub: String(e).includes('not installed'),
+      hint: 'Install: npm i -w @grok-bot/server playwright && npx playwright install chromium',
     });
   }
 }
@@ -95,8 +101,87 @@ export async function browserSnapshot(): Promise<string> {
     return JSON.stringify({
       error: e instanceof Error ? e.message : String(e),
       stub: String(e).includes('not installed'),
+      hint: 'Install: npm i -w @grok-bot/server playwright && npx playwright install chromium',
     });
   }
+}
+
+export async function browserScreenshot(dataDir: string, hintPath?: string): Promise<string> {
+  try {
+    const page = await getPage();
+    const dir = path.join(dataDir, 'screenshots');
+    fs.mkdirSync(dir, { recursive: true });
+    const fileName = hintPath
+      ? path.basename(hintPath).replace(/[^a-zA-Z0-9._-]/g, '_')
+      : `shot-${uuid().slice(0, 8)}.png`;
+    const full = path.join(dir, fileName.endsWith('.png') ? fileName : `${fileName}.png`);
+    await page.screenshot({ path: full, fullPage: false });
+    lastScreenshotPath = full;
+    return JSON.stringify({
+      ok: true,
+      path: full,
+      url: page.url(),
+      title: await page.title(),
+    });
+  } catch (e) {
+    // Fallback: write a tiny 1x1 PNG stub so preview still works offline
+    try {
+      const dir = path.join(dataDir, 'screenshots');
+      fs.mkdirSync(dir, { recursive: true });
+      const full = path.join(dir, `stub-${Date.now()}.png`);
+      // Minimal valid 1x1 PNG
+      const png = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64'
+      );
+      fs.writeFileSync(full, png);
+      lastScreenshotPath = full;
+      return JSON.stringify({
+        ok: true,
+        stub: true,
+        path: full,
+        message: e instanceof Error ? e.message : String(e),
+        hint: 'Install Playwright for real screenshots',
+      });
+    } catch (e2) {
+      return JSON.stringify({
+        error: e instanceof Error ? e.message : String(e),
+        stub: true,
+      });
+    }
+  }
+}
+
+export function getLastScreenshotPath(): string | null {
+  return lastScreenshotPath;
+}
+
+export async function captureDesktopPreview(dataDir: string): Promise<string | null> {
+  try {
+    if (pageInstance && !pageInstance.isClosed()) {
+      const dir = path.join(dataDir, 'screenshots');
+      fs.mkdirSync(dir, { recursive: true });
+      const full = path.join(dir, 'preview-live.png');
+      await pageInstance.screenshot({ path: full, fullPage: false });
+      lastScreenshotPath = full;
+      return full;
+    }
+  } catch {
+    // ignore
+  }
+  if (lastScreenshotPath && fs.existsSync(lastScreenshotPath)) return lastScreenshotPath;
+  // Ensure a placeholder exists
+  const dir = path.join(dataDir, 'screenshots');
+  fs.mkdirSync(dir, { recursive: true });
+  const placeholder = path.join(dir, 'preview-placeholder.png');
+  if (!fs.existsSync(placeholder)) {
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      'base64'
+    );
+    fs.writeFileSync(placeholder, png);
+  }
+  return placeholder;
 }
 
 export async function closeBrowser(): Promise<void> {

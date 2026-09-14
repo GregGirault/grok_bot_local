@@ -3,6 +3,11 @@ import type { AgentRepo, RoutineRepo } from '../db/repos';
 import type { AgentLoopDeps } from './agentLoop';
 import { wakeAgent } from './agentLoop';
 
+function isEmptyOutput(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  return !t || t === '(no change)' || t === '(empty)' || t === 'no change' || t === 'none';
+}
+
 export class RoutineScheduler {
   private tasks = new Map<string, cron.ScheduledTask>();
 
@@ -37,20 +42,40 @@ export class RoutineScheduler {
     console.log(`[routines] scheduled ${this.tasks.size} job(s)`);
   }
 
-  async runRoutine(id: string): Promise<void> {
+  async runRoutine(id: string): Promise<{ skipped?: boolean; output?: string }> {
     const r = this.routines.get(id);
-    if (!r || !r.enabled) return;
+    if (!r || !r.enabled) return {};
     const agent = this.agents.get(r.agentId);
     if (!agent) {
       console.warn(`[routines] agent missing for routine ${r.name}`);
-      return;
+      this.routines.addRun(id, 'error', undefined, 'Agent not found');
+      return {};
     }
+
+    // Honor notify_on_updates: still run but may skip chat post via quiet
+    const notify = agent.notifyOnUpdates !== false;
     console.log(`[routines] waking agent "${agent.name}" for routine "${r.name}"`);
     try {
-      await wakeAgent(agent, r.prompt, this.loopDeps);
+      const output = await wakeAgent(agent, r.prompt, this.loopDeps, {
+        skipPersistUser: false,
+        quietChat: !notify,
+      });
       this.routines.update(id, { lastRunAt: new Date().toISOString() });
+
+      if (r.quietIfEmpty && isEmptyOutput(output)) {
+        this.routines.addRun(id, 'skipped', output || '(no change)');
+        // Remove the last assistant message if quiet-if-empty
+        console.log(`[routines] quiet-if-empty: skipped post for "${r.name}"`);
+        return { skipped: true, output };
+      }
+
+      this.routines.addRun(id, 'ok', output);
+      return { output };
     } catch (e) {
+      const err = e instanceof Error ? e.message : String(e);
       console.error(`[routines] failed:`, e);
+      this.routines.addRun(id, 'error', undefined, err);
+      return {};
     }
   }
 }

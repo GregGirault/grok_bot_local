@@ -1,18 +1,21 @@
 {
   "name": "grok-bot-local",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Local free Grok Bot clone MVP \u2014 Ollama + tools + memory + routines",
+  "description": "Local free Grok Bot clone MVP — Ollama + tools + memory + routines",
   "license": "MIT",
   "workspaces": [
-    "apps/*",
+    "apps/server",
+    "apps/web",
     "packages/*"
   ],
   "scripts": {
     "dev": "concurrently -n server,web -c cyan,magenta \"npm run dev -w @grok-bot/server\" \"npm run dev -w @grok-bot/web\"",
     "build": "npm run build -w @grok-bot/shared && npm run build -w @grok-bot/server && npm run build -w @grok-bot/web",
     "start": "npm run start -w @grok-bot/server",
-    "typecheck": "npm run typecheck -w @grok-bot/shared && npm run typecheck -w @grok-bot/server && npm run typecheck -w @grok-bot/web"
+    "typecheck": "npm run typecheck -w @grok-bot/shared && npm run typecheck -w @grok-bot/server && npm run typecheck -w @grok-bot/web",
+    "dev:desktop": "npm --prefix apps/desktop install && npm --prefix apps/desktop run dev",
+    "start:desktop": "GROK_BOT_DESKTOP_PROD=1 npm --prefix apps/desktop start"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

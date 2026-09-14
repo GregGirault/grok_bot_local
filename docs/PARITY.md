@@ -5,6 +5,8 @@ Open reimplementation inspirée de l’UX Grok Bot — **pas** de reverse-engine
 
 Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backend minimal/absent)
 
+**Version:** 0.3.0
+
 ---
 
 ## 1. Shell / chrome (design fidelity)
@@ -13,20 +15,21 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 |---------|--------|------------------|
 | Left sidebar dense dark chrome | **DONE** | `App.tsx` — 240px panel, sections |
 | Agent list + colored avatars (circle/rounded/square/blob/pebble) | **DONE** | `AgentAvatar.tsx` · `index.css` |
-| Sidebar sections (Channels / Memory / Routines / Skills) | **DONE** | `App.tsx` NAV |
-| Hidden chats placeholder | **STUB** | Empty state in sidebar |
+| Sidebar sections (Channels / Projects / Memory / Routines / Skills) | **DONE** | `App.tsx` NAV |
+| Hidden chats | **DONE** | DB `agents.hidden` · sidebar Hidden section · hide/unhide |
 | Account button bottom-left → Settings | **DONE** | Opens `/settings` |
 | Ctrl/, (Cmd+,) → Settings | **DONE** | Keydown in `App.tsx` |
-| Right-click agent → Delete confirm | **DONE** | Context menu + modal |
+| Right-click agent → Delete / Hide | **DONE** | Context menu + modal |
 | Chat header clickable → right info pane | **DONE** | `AgentInfoPane.tsx` |
-| Info pane: Computer preview | **STUB** | Empty desktop preview card |
-| Info pane: Routines / Channels / Members | **PARTIAL** | Routines+Channels live; Members stub |
-| Info pane: per-agent gear (avatar/name/title/desc/notifications) | **PARTIAL** | Saves profile fields; notifications UI only |
-| Global Settings: General (theme/lang/accent) | **PARTIAL** | UI done; light/system theme TODO |
-| Global Settings: Computer (machines list) | **STUB** | Local machine row + “add remote” empty |
-| Global Settings: Updates | **STUB** | Version display + check button |
-| Electron desktop wrapper | **TODO** | Web-first for now |
+| Info pane: Computer preview | **DONE** | Polling `/api/computer/preview` · Playwright/placeholder |
+| Info pane: Routines / Channels / Members | **DONE** | Members CRUD + channel membership |
+| Info pane: per-agent gear + notifications | **DONE** | `notify_on_updates` persisted & honored |
+| Global Settings: General (theme/lang/accent) | **DONE** | CSS vars + localStorage + settings API |
+| Global Settings: Computer (machines CRUD) | **DONE** | SQLite `machines` |
+| Global Settings: Updates | **DONE** | GitHub releases/commits check (graceful fail) |
+| Electron desktop wrapper | **DONE** | `apps/desktop` · `npm run dev:desktop` |
 | No Cursor trademarks | **DONE** | Generic “G” mark only |
+| i18n FR/EN main chrome | **DONE** | `lib/i18n.ts` |
 
 ---
 
@@ -34,13 +37,13 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 
 | Capacité | Statut | Pointeurs |
 |----------|--------|-----------|
-| Create / update / list / delete agents | **DONE** | `routes/agents.ts` · `NewAgentPage` |
-| Profile: name, title, description, system prompt | **DONE** | DB + UI |
-| Avatar color + shape | **DONE** | `avatar_color` / `avatar_shape` |
-| SendToAgent (tool + API + inbox UI) | **DONE** | `send_to_agent` · inbox panel |
-| Group channels + fan-out to members | **DONE** | `routes/channels.ts` · `ChannelsPage` |
-| Multi-user / org members | **TODO** | Members tab stub |
-| Agent presence / typing indicators (multi) | **TODO** | |
+| Create / update / list / delete agents | **DONE** | `routes/agents.ts` |
+| Profile: name, title, description, system prompt | **DONE** | |
+| Avatar color + shape | **DONE** | |
+| SendToAgent (tool + API + inbox UI) | **DONE** | |
+| Group channels + fan-out to members | **DONE** | |
+| Multi-user / org members | **DONE** | `team_members` table · Info pane · Channels attach |
+| Agent presence / typing indicators | **DONE** | SSE `typing` + UI dots while streaming |
 
 ---
 
@@ -48,13 +51,13 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 
 | Capacité | Statut | Pointeurs |
 |----------|--------|-----------|
-| Streaming tokens (SSE) | **DONE** | `routes/chat.ts` · `streamChat` |
-| Markdown rendering | **PARTIAL** | Plain `whitespace-pre-wrap`; MD Phase 2 |
-| Widget question cards + option click | **DONE** | `ask_user` · `widget-select` · `ChatPage` |
-| Tool-call cards (collapsed name + result) | **DONE** | `kind: tool_card` |
-| Attachments (images/files) | **TODO** | |
-| Message edit / regenerate | **TODO** | |
-| Hidden / archive chat | **STUB** | Sidebar placeholder |
+| Streaming tokens (SSE) | **DONE** | |
+| Markdown rendering | **DONE** | `react-markdown` + `remark-gfm` |
+| Widget question cards + option click | **DONE** | |
+| Tool-call cards (collapsed name + result) | **DONE** | |
+| Attachments (images/files) | **DONE** | `data/uploads` · `/api/uploads` |
+| Message edit / regenerate | **DONE** | `PATCH /api/messages/:id` · `POST /api/chat/regenerate` |
+| Hidden / archive chat | **DONE** | Hide agent chat end-to-end |
 
 ---
 
@@ -62,15 +65,16 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 
 | Capacité | Statut | Pointeurs |
 |----------|--------|-----------|
-| shell (sandboxed) | **DONE** | `tools/index.ts` |
+| shell (sandboxed) | **DONE** | |
 | read_file / write_file / list_dir | **DONE** | |
 | web_fetch / web_search | **DONE** | |
 | write_memory / forget_memory / recall_memory | **DONE** | |
 | send_to_agent / ask_user | **DONE** | |
-| browser_navigate / browser_snapshot | **PARTIAL** | Playwright optional dep |
-| screenshot | **STUB** | Clear error JSON |
-| CopyToBox / CopyFromBox analogs | **TODO** | |
-| Confirm destructive actions (UI) | **PARTIAL** | Agent delete confirm; shell still blocklist-only |
+| browser_navigate / browser_snapshot | **DONE** | Playwright optional; clear install hint |
+| screenshot | **DONE** | `page.screenshot` → `data/screenshots` |
+| copy_to_workspace / copy_from_workspace | **DONE** | Machine-aware CopyToBox/FromBox analogs |
+| Confirm destructive actions (UI) | **DONE** | Dangerous shell → approval widget + banner |
+| spawn_task | **DONE** | Nested background task tool |
 
 ---
 
@@ -78,12 +82,12 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 
 | Capacité | Statut | Pointeurs |
 |----------|--------|-----------|
-| Key/value persist per agent | **DONE** | `MemoryRepo` |
-| Tiers: profile / log / note | **PARTIAL** | Columns + UI; no auto-promotion |
-| Scopes: agent / user | **PARTIAL** | Stored; user-global aggregation light |
-| RecallMemory search | **DONE** | tool + `GET /api/memory?q=` |
-| Memory UI page (list/add/forget) | **DONE** | `MemoryPage.tsx` |
-| Project-scoped memory | **TODO** | |
+| Key/value persist per agent | **DONE** | |
+| Tiers: profile / log / note | **DONE** | Auto note→log after 7 days; pin→profile |
+| Scopes: agent / user / project | **DONE** | User-global aggregation in prompt |
+| RecallMemory search | **DONE** | |
+| Memory UI page (list/add/forget/pin) | **DONE** | |
+| Project-scoped memory | **DONE** | Via projects + `project_id` |
 
 ---
 
@@ -91,11 +95,11 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 
 | Capacité | Statut | Pointeurs |
 |----------|--------|-----------|
-| Load markdown from `skills/` | **DONE** | `services/skills.ts` |
-| YAML frontmatter | **DONE** | name/description |
-| Skills UI list | **DONE** | `SkillsPage.tsx` |
-| Write / delete skill API | **DONE** | `POST/DELETE /api/skills` |
-| In-UI skill authoring editor | **TODO** | |
+| Load markdown from `skills/` | **DONE** | |
+| YAML frontmatter | **DONE** | |
+| Skills UI list | **DONE** | |
+| Write / delete skill API | **DONE** | |
+| In-UI skill authoring editor | **DONE** | Create/edit markdown + frontmatter |
 
 ---
 
@@ -103,11 +107,11 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 
 | Capacité | Statut | Pointeurs |
 |----------|--------|-----------|
-| Cron scheduler | **DONE** | `node-cron` · `RoutineScheduler` |
-| Create / pause / resume / delete / run-now | **DONE** | `RoutinesPage` |
-| Quiet-if-empty | **PARTIAL** | Column stored; skip-empty behavior TODO |
-| Webhook / event trigger | **TODO** | |
-| Routine run history UI | **TODO** | `last_run_at` only |
+| Cron scheduler | **DONE** | |
+| Create / pause / resume / delete / run-now | **DONE** | |
+| Quiet-if-empty | **DONE** | Skip post when output empty / “(no change)” |
+| Webhook / event trigger | **DONE** | `POST /api/hooks/:routineId` · `/api/hooks/token/:token` |
+| Routine run history UI | **DONE** | Table of runs on Routines page |
 
 ---
 
@@ -115,10 +119,10 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 
 | Capacité | Statut | Pointeurs |
 |----------|--------|-----------|
-| Background enqueue + list | **DONE** | `TaskRunner` · `/api/tasks` · Settings→Tasks |
-| Report back into chat thread | **PARTIAL** | Result on task record; no auto chat post |
-| Nested Task tool for agents | **TODO** | |
-| Parallel worker pool limits | **TODO** | Serial queue |
+| Background enqueue + list | **DONE** | |
+| Report back into chat thread | **DONE** | Auto system message on completion |
+| Nested Task tool for agents | **DONE** | `spawn_task` |
+| Parallel worker pool limits | **DONE** | Configurable concurrency (default 2) |
 
 ---
 
@@ -126,12 +130,10 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 
 | Capacité | Statut | Pointeurs |
 |----------|--------|-----------|
-| `config/mcp.json` loader | **DONE** | `services/mcp.ts` |
-| Dynamic tool registration (stubs) | **DONE** | `mcp_<server>_<tool>` |
-| Live stdio / SSE MCP transport | **TODO** | |
-| Connectors settings UI | **PARTIAL** | Status in Connection settings |
-
-Format: see `config/mcp.example.json`.
+| `config/mcp.json` loader | **DONE** | |
+| Dynamic tool registration | **DONE** | |
+| Live stdio MCP transport | **DONE** | JSON-RPC tools/list + tools/call · `scripts/mcp-echo-server.mjs` |
+| Connectors settings UI | **DONE** | Enable/disable · edit mcp.json · show tools |
 
 ---
 
@@ -139,11 +141,11 @@ Format: see `config/mcp.example.json`.
 
 | Capacité | Statut | Pointeurs |
 |----------|--------|-----------|
-| Playwright navigate + snapshot | **PARTIAL** | Optional `playwright` |
-| Desktop / computer preview pane | **STUB** | Info pane Computer tab |
-| Registered machines list | **STUB** | Settings→Computer |
-| Auto-review safety gate | **STUB** | Documented; not wired |
-| Local box filesystem (workspace) | **DONE** | `workspaceRoot` sandbox |
+| Playwright navigate + snapshot | **DONE** | Optional dep |
+| Desktop / computer preview pane | **DONE** | Polling endpoint |
+| Registered machines list | **DONE** | Settings→Computer CRUD |
+| Auto-review safety gate | **DONE** | Approvals table + API + UI banner |
+| Local box filesystem (workspace) | **DONE** | |
 
 ---
 
@@ -151,8 +153,9 @@ Format: see `config/mcp.example.json`.
 
 | Capacité | Statut | Pointeurs |
 |----------|--------|-----------|
-| Create / join project folders | **TODO** | |
-| Project memory | **TODO** | |
+| Create / join project folders | **DONE** | CRUD slug/name/path/description |
+| Project memory | **DONE** | Scoped list/add on Projects page |
+| Projects UI in sidebar | **DONE** | `/projects` |
 
 ---
 
@@ -161,17 +164,20 @@ Format: see `config/mcp.example.json`.
 | Capacité | Statut | Pointeurs |
 |----------|--------|-----------|
 | Shell sandbox + blocklist | **DONE** | |
-| Path escape prevention | **DONE** | `resolveSafe` |
-| Destructive confirm UI | **PARTIAL** | Agent delete; more TODO |
-| Sandboxed browser | **PARTIAL** | Headless chromium when installed |
+| Path escape prevention | **DONE** | |
+| Destructive confirm UI | **DONE** | Auto-review approvals |
+| Sandboxed browser | **DONE** | Headless chromium when installed |
 
 ---
 
-## Phase 1 + design fidelity shipped
+## Honest leftovers
 
-- Full Phase 1 APIs (inbox, widgets, channels, memory/routines/skills UI, tasks, MCP loader, Playwright tools)
-- Grok Bot–like chrome: sidebar, avatars (blob/pebble), account→settings, Ctrl+,, agent context delete, chat→right info pane, Settings General/Computer/Connection/Tasks/Updates
-- Default model `qwen2.5:7b`
+| Item | Why |
+|------|-----|
+| True OS desktop capture (not browser page) | Requires native screen APIs / OS permissions; placeholder PNG used when Playwright page inactive |
+| Electron auto-update binary channel | Optional package; “Check for updates” hits GitHub API only |
+| Multi-user auth / real org SSO | Local stub members only (by design for local-first) |
+| Full MCP SSE remote transport | Stdio live; URL/SSE servers remain config stubs |
 
 ## Verify
 
@@ -179,27 +185,16 @@ Format: see `config/mcp.example.json`.
 |------|--------|
 | UI | http://127.0.0.1:5173 |
 | API health | http://127.0.0.1:8787/health |
-| Channels | `POST /api/channels` · `POST /api/channels/:id/messages` |
-| Tasks | `POST /api/tasks` · `GET /api/tasks` |
-| Memory | `GET/POST /api/memory` |
-| Inbox | `GET/POST /api/agents/:id/inbox` |
-| Widget select | `POST /api/chat/widget-select` |
-| MCP | `GET /api/mcp` |
-| Settings | `/settings/general` · `/settings/computer` · … |
+| Desktop | `npm run dev:desktop` (with `npm run dev` running) |
+| Webhooks | `POST /api/hooks/:routineId` |
+| Projects | `/projects` · `GET/POST /api/projects` |
+| Attachments | chat 📎 · `POST /api/uploads` |
+| Approvals | banner in chat · `POST /api/approvals/:id` |
+| MCP echo | `config/mcp.json` echo server · `scripts/mcp-echo-server.mjs` |
 
 ### Playwright (optional)
 
 ```bash
 npm i -w @grok-bot/server playwright
 npx playwright install chromium
-```
-
-### Pull on Windows PC
-
-```powershell
-cd C:\Users\grego\grok_bot_local
-git pull origin main
-npm install
-npm run build
-npm run dev
 ```

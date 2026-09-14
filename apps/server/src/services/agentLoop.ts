@@ -6,11 +6,14 @@ import type {
   SettingsRepo,
   AgentRepo,
   InboxRepo,
+  MachineRepo,
+  ApprovalRepo,
 } from '../db/repos';
 import { OllamaClient, type ChatMessageParam, type ToolCall } from './ollama';
 import { getToolDefs, executeTool, type ToolContext } from '../tools';
 import { loadSkills, formatSkillsForPrompt } from './skills';
 import type { LoadedMcp } from './mcp';
+import type { AttachmentInfo } from '@grok-bot/shared';
 
 export type SseWriter = (event: string, data: unknown) => void;
 
@@ -20,9 +23,13 @@ export interface AgentLoopDeps {
   settings: SettingsRepo;
   skillsDir: string;
   defaultWorkspace: string;
+  dataDir: string;
   agents?: AgentRepo;
   inbox?: InboxRepo;
+  machines?: MachineRepo;
+  approvals?: ApprovalRepo;
   mcp?: LoadedMcp;
+  spawnTask?: (agentId: string, prompt: string, parentId?: string) => { id: string };
 }
 
 const MAX_TOOL_ROUNDS = 8;
@@ -33,18 +40,37 @@ export async function runAgentChat(
   model: string | undefined,
   write: SseWriter,
   deps: AgentLoopDeps,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  opts?: {
+    attachments?: AttachmentInfo[];
+    skipPersistUser?: boolean;
+    quietChat?: boolean;
+  }
 ): Promise<void> {
   const settings = deps.settings.getAll();
   const workspaceRoot = settings.workspaceRoot || deps.defaultWorkspace;
   const ollama = new OllamaClient(settings.ollamaBaseUrl);
   const useModel = model || settings.defaultModel;
 
-  deps.messages.add({
-    agentId: agent.id,
-    role: 'user',
-    content: userMessage,
-  });
+  // Auto tier promotion
+  deps.memory.promoteStale(7);
+
+  write('typing', { active: true });
+
+  let content = userMessage;
+  if (opts?.attachments?.length) {
+    const paths = opts.attachments.map((a) => `- ${a.name}: ${a.path}`).join('\n');
+    content += `\n\n[Attachments]\n${paths}`;
+  }
+
+  if (!opts?.skipPersistUser) {
+    deps.messages.add({
+      agentId: agent.id,
+      role: 'user',
+      content,
+      attachments: opts?.attachments,
+    });
+  }
 
   const skills = loadSkills(deps.skillsDir);
   const memoryBlock = deps.memory.formatForPrompt(agent.id);
@@ -68,21 +94,28 @@ export async function runAgentChat(
         name: m.toolName,
       });
     } else if (m.role === 'user' || m.role === 'assistant') {
-      if (m.kind === 'widget') continue;
+      if (m.kind === 'widget' || m.kind === 'approval') continue;
       llmMessages.push({ role: m.role, content: m.content });
     }
   }
 
   const toolCtx: ToolContext = {
     workspaceRoot,
+    dataDir: deps.dataDir,
     agentId: agent.id,
     memory: deps.memory,
     agents: deps.agents,
     inbox: deps.inbox,
     messages: deps.messages,
+    machines: deps.machines,
+    approvals: deps.approvals,
     mcp: deps.mcp,
+    spawnTask: deps.spawnTask,
     onWidget: (widget) => {
       write('widget', widget);
+    },
+    onApproval: (approval) => {
+      write('approval', approval);
     },
   };
 
@@ -106,7 +139,7 @@ export async function runAgentChat(
 
         if (delta.content) {
           assistantText += delta.content;
-          write('token', { content: delta.content });
+          if (!opts?.quietChat) write('token', { content: delta.content });
         }
 
         if (delta.tool_calls) {
@@ -124,6 +157,7 @@ export async function runAgentChat(
         }
       }
     } catch (e) {
+      write('typing', { active: false });
       write('error', {
         message: e instanceof Error ? e.message : String(e),
       });
@@ -139,11 +173,14 @@ export async function runAgentChat(
       }));
 
     if (toolCalls.length === 0) {
-      deps.messages.add({
-        agentId: agent.id,
-        role: 'assistant',
-        content: assistantText,
-      });
+      if (!opts?.quietChat) {
+        deps.messages.add({
+          agentId: agent.id,
+          role: 'assistant',
+          content: assistantText,
+        });
+      }
+      write('typing', { active: false });
       write('done', { content: assistantText });
       return;
     }
@@ -177,7 +214,6 @@ export async function runAgentChat(
         result: result.slice(0, 8000),
       });
 
-      // Persist collapsed tool card for UI history
       deps.messages.add({
         agentId: agent.id,
         role: 'tool',
@@ -211,6 +247,7 @@ export async function runAgentChat(
     }
   }
 
+  write('typing', { active: false });
   write('done', { content: '(max tool rounds reached)' });
 }
 
@@ -218,17 +255,26 @@ export async function runAgentChat(
 export async function wakeAgent(
   agent: Agent,
   prompt: string,
-  deps: AgentLoopDeps
+  deps: AgentLoopDeps,
+  opts?: { skipPersistUser?: boolean; quietChat?: boolean }
 ): Promise<string> {
   let final = '';
-  await runAgentChat(agent, prompt, undefined, (event, data) => {
-    if (event === 'token' && data && typeof data === 'object' && 'content' in data) {
-      final += String((data as { content: string }).content);
-    }
-    if (event === 'done' && data && typeof data === 'object' && 'content' in data) {
-      const c = String((data as { content: string }).content);
-      if (c) final = c;
-    }
-  }, deps);
+  await runAgentChat(
+    agent,
+    prompt,
+    undefined,
+    (event, data) => {
+      if (event === 'token' && data && typeof data === 'object' && 'content' in data) {
+        final += String((data as { content: string }).content);
+      }
+      if (event === 'done' && data && typeof data === 'object' && 'content' in data) {
+        const c = String((data as { content: string }).content);
+        if (c) final = c;
+      }
+    },
+    deps,
+    undefined,
+    opts
+  );
   return final;
 }

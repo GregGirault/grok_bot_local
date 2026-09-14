@@ -10,7 +10,9 @@ export function registerSettingsRoutes(
   settings: SettingsRepo,
   skillsDir: string,
   version: string,
-  mcp: LoadedMcp
+  getMcp: () => LoadedMcp,
+  _projectRoot?: string,
+  _onMcpReload?: (m: LoadedMcp) => void
 ): void {
   app.get('/api/settings', async () => settings.getAll());
 
@@ -23,6 +25,7 @@ export function registerSettingsRoutes(
       name: s.name,
       description: s.description,
       preview: s.content.slice(0, 200),
+      content: s.content,
       frontmatter: s.frontmatter,
     }));
   });
@@ -37,6 +40,7 @@ export function registerSettingsRoutes(
       name: skill.name,
       description: skill.description,
       preview: skill.content.slice(0, 200),
+      content: skill.content,
       frontmatter: skill.frontmatter,
     });
   });
@@ -48,11 +52,21 @@ export function registerSettingsRoutes(
     return { ok: true };
   });
 
-  app.get('/api/mcp', async () => ({
-    servers: mcp.serverNames,
-    tools: mcp.toolDefs.map((t) => t.function.name),
-    configFormat: 'See config/mcp.example.json and docs/PARITY.md',
-  }));
+  app.get('/api/mcp', async () => {
+    const mcp = getMcp();
+    return {
+      servers: mcp.serverNames,
+      tools: mcp.toolDefs.map((t) => t.function.name),
+      all: mcp.config.servers.map((s) => ({
+        name: s.name,
+        disabled: Boolean(s.disabled),
+        command: s.command,
+        args: s.args,
+        tools: s.tools?.map((t) => t.name) ?? [],
+      })),
+      configFormat: 'See config/mcp.example.json and docs/PARITY.md',
+    };
+  });
 
   app.get('/api/models', async (_req, reply) => {
     const s = settings.getAll();

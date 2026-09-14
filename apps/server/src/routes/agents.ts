@@ -9,7 +9,10 @@ export function registerAgentRoutes(
   memory: MemoryRepo,
   inbox: InboxRepo
 ): void {
-  app.get('/api/agents', async () => agents.list());
+  app.get('/api/agents', async (req) => {
+    const includeHidden = (req.query as { includeHidden?: string }).includeHidden === '1';
+    return agents.list(includeHidden);
+  });
 
   app.get<{ Params: { id: string } }>('/api/agents/:id', async (req, reply) => {
     const a = agents.get(req.params.id);
@@ -32,6 +35,7 @@ export function registerAgentRoutes(
       systemPrompt: body.systemPrompt,
       avatarColor: body.avatarColor,
       avatarShape: body.avatarShape,
+      notifyOnUpdates: body.notifyOnUpdates,
     });
     return reply.code(201).send(created);
   });
@@ -76,10 +80,10 @@ export function registerAgentRoutes(
 
   app.post<{
     Params: { id: string };
-    Body: { key: string; value: string; tier?: string; scope?: string };
+    Body: { key: string; value: string; tier?: string; scope?: string; projectId?: string };
   }>('/api/agents/:id/memory', async (req, reply) => {
     if (!agents.get(req.params.id)) return reply.code(404).send({ error: 'Agent not found' });
-    const { key, value, tier, scope } = req.body ?? {};
+    const { key, value, tier, scope, projectId } = req.body ?? {};
     if (!key?.trim() || value === undefined) {
       return reply.code(400).send({ error: 'key and value required' });
     }
@@ -88,7 +92,8 @@ export function registerAgentRoutes(
       key.trim(),
       String(value),
       (tier as 'profile' | 'log' | 'note') || 'note',
-      (scope as 'agent' | 'user') || 'agent'
+      (scope as 'agent' | 'user' | 'project') || 'agent',
+      projectId
     );
     return reply.code(201).send(entry);
   });
@@ -103,7 +108,6 @@ export function registerAgentRoutes(
     }
   );
 
-  // Agent-to-agent inbox
   app.get<{ Params: { id: string } }>('/api/agents/:id/inbox', async (req, reply) => {
     if (!agents.get(req.params.id)) return reply.code(404).send({ error: 'Agent not found' });
     return inbox.list(req.params.id);

@@ -1,12 +1,12 @@
 # Grok Bot Local
 
-Local free Grok Bot clone Phase 1 — chat with Ollama, tools, memory, skills, and cron routines.
+Local-first Grok Bot–like assistant — Ollama + tools + memory + routines + Electron desktop.
 
-**Stack:** Node 20 · TypeScript · npm workspaces · Fastify · better-sqlite3 · Vite · React · Tailwind
+**Stack:** Node 20 · TypeScript · npm workspaces · Fastify · better-sqlite3 · Vite · React · Tailwind · Electron (optional)
+
+See **[docs/PARITY.md](docs/PARITY.md)** for the full feature map (v0.3.0).
 
 ---
-
-See **[docs/PARITY.md](docs/PARITY.md)** for the feature gap map (DONE / PARTIAL / TODO).
 
 ## English — Install & run
 
@@ -34,26 +34,55 @@ npm run dev
 - API: http://127.0.0.1:8787  
 - Health: http://127.0.0.1:8787/health  
 
+### Electron desktop
+
+With `npm run dev` already running:
+
+```bash
+npm run dev:desktop
+```
+
+Loads http://127.0.0.1:5173 in development. Production: point at http://127.0.0.1:8787 (`GROK_BOT_DESKTOP_PROD=1`).
+
 ### Build & production start
 
 ```bash
 npm run build
-npm run start   # starts API only; serve apps/web/dist with any static host or open via Vite preview
+npm run start
 ```
 
-Optional: `npm run preview -w @grok-bot/web` for the built UI.
+Electron is optional (`apps/desktop`); core build is shared/server/web.
 
 ### Configuration
 
-Settings are stored in SQLite (`data/grok_bot.db`) and editable in the **Settings** page:
+Settings live in SQLite (`data/grok_bot.db`) and the **Settings** UI:
 
 | Key | Default |
 |-----|---------|
 | `ollamaBaseUrl` | `http://127.0.0.1:11434` |
 | `defaultModel` | `qwen2.5:7b` |
-| `workspaceRoot` | `<repo>/workspace` (created at runtime) |
+| `workspaceRoot` | `<repo>/workspace` |
+| `taskConcurrency` | `2` |
+| `theme` / `language` / `accentColor` | dark / en / `#8b5cf6` |
 
-Add markdown skills under `skills/`. Agent tools are scoped to `workspaceRoot`.
+### Highlights (v0.3)
+
+- **Attachments** — upload images/files in chat (`data/uploads`)
+- **Projects** — sidebar Projects page + project-scoped memory
+- **Webhooks** — `POST /api/hooks/:routineId` or `/api/hooks/token/:token`
+- **MCP stdio** — live JSON-RPC client; example `scripts/mcp-echo-server.mjs`
+- **Electron** — `apps/desktop` tray-capable wrapper
+- **Approvals** — dangerous shell commands require Approve/Deny
+- **Themes** — light / dark / system + global accent
+
+### Playwright (optional)
+
+```bash
+npm i -w @grok-bot/server playwright
+npx playwright install chromium
+```
+
+Browser tools (`browser_navigate`, `browser_snapshot`, `screenshot`) show a clear install hint if Playwright is missing.
 
 ### Push to GitHub
 
@@ -69,57 +98,44 @@ git push -u origin main
 ### Prérequis
 
 - Node.js **20+**
-- [Ollama](https://ollama.com) en local (`http://127.0.0.1:11434`)
-- Un modèle téléchargé, ex. `ollama pull qwen2.5:7b`
-- Outils de compilation pour les modules natifs (`better-sqlite3`) : sous Debian/Ubuntu `build-essential python3`
+- [Ollama](https://ollama.com) en local
+- Un modèle, ex. `ollama pull qwen2.5:7b`
 
-### Installation
+### Développement
 
 ```bash
-cd grok_bot_local
 npm install
-```
-
-### Développement (API + UI)
-
-```bash
 npm run dev
 ```
 
 - Interface : http://127.0.0.1:5173  
 - API : http://127.0.0.1:8787  
-- Santé : http://127.0.0.1:8787/health  
 
-### Build & démarrage
+### Electron
 
 ```bash
-npm run build
-npm run start
+npm run dev:desktop
 ```
 
-### Configuration
+### Webhooks
 
-Les réglages sont dans SQLite (`data/grok_bot.db`), modifiables via la page **Settings** :
+```bash
+curl -X POST http://127.0.0.1:8787/api/hooks/<routineId>
+```
 
-| Clé | Défaut |
-|-----|--------|
-| `ollamaBaseUrl` | `http://127.0.0.1:11434` |
-| `defaultModel` | `qwen2.5:7b` |
-| `workspaceRoot` | `<repo>/workspace` |
+### Projets & pièces jointes
 
-Ajoutez des skills markdown dans `skills/`. Les outils agent sont limités à `workspaceRoot`.
+- Page **Projects** dans la barre latérale  
+- Bouton 📎 dans le chat pour joindre des fichiers  
 
 ---
 
 ## Features
 
-- **Agents CRUD** — default agent `dev`
-- **Streaming chat (SSE)** via Ollama OpenAI-compatible API
-- **Tools:** `shell` (sandboxed), `read_file`, `write_file`, `list_dir`, `web_fetch`, `web_search`, `write_memory`, `forget_memory`
-- **Memory** injected into the system prompt
-- **Skills** loaded from `skills/*.md`
-- **Routines** — SQLite + `node-cron` wake agents with a prompt
-- **Health** — `GET /health` checks Ollama
+- Agents CRUD · streaming chat (SSE) · markdown · widgets · tool cards
+- Tools: shell, files, web, browser, screenshot, copy_to/from_workspace, spawn_task, memory, MCP
+- Memory tiers + user/project scopes · skills editor · cron routines + webhooks
+- Background task pool · auto-review approvals · machines CRUD · Electron
 
 ## License
 

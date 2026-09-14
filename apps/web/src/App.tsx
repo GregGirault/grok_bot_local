@@ -95,7 +95,7 @@ export default function App() {
 
   const NAV = [
     { to: '/channels', label: t(lang, 'channels'), icon: '#' },
-    { to: '/projects', label: t(lang, 'projects'), icon: '◫' },
+    { to: '/projects', label: t(lang, 'projects'), icon: '◩' },
     { to: '/memory', label: t(lang, 'memory'), icon: '◈' },
     { to: '/routines', label: t(lang, 'routines'), icon: '⏱' },
     { to: '/skills', label: t(lang, 'skills'), icon: '✦' },

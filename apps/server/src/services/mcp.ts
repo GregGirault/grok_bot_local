@@ -55,6 +55,7 @@ class StdioMcpClient {
 
   constructor(
     private entry: McpServerEntry,
+    private projectRoot: string,
     private onLog?: (msg: string) => void
   ) {}
 
@@ -63,7 +64,11 @@ class StdioMcpClient {
     if (this.ready) return this.ready;
     this.ready = new Promise((resolve, reject) => {
       try {
-        this.proc = spawn(this.entry.command!, this.entry.args ?? [], {
+        const args = (this.entry.args ?? []).map((a) =>
+          path.isAbsolute(a) ? a : path.resolve(this.projectRoot, a)
+        );
+        this.proc = spawn(this.entry.command!, args, {
+          cwd: this.projectRoot,
           env: { ...process.env, ...(this.entry.env || {}) },
           stdio: ['pipe', 'pipe', 'pipe'],
         });
@@ -191,8 +196,10 @@ class StdioMcpClient {
 }
 
 const clients = new Map<string, StdioMcpClient>();
+let mcpProjectRoot = '';
 
 export function loadMcpConfig(projectRoot: string): LoadedMcp {
+  mcpProjectRoot = projectRoot;
   const configPath = path.join(projectRoot, 'config', 'mcp.json');
   if (!fs.existsSync(configPath)) return { ...EMPTY, configPath };
 
@@ -273,7 +280,7 @@ export function loadMcpConfig(projectRoot: string): LoadedMcp {
 async function ensureClient(entry: McpServerEntry): Promise<StdioMcpClient> {
   let c = clients.get(entry.name);
   if (!c) {
-    c = new StdioMcpClient(entry, (m) => console.log(m));
+    c = new StdioMcpClient(entry, mcpProjectRoot, (m) => console.log(m));
     clients.set(entry.name, c);
   }
   await c.start();

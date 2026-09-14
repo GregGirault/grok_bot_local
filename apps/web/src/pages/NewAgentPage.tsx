@@ -22,7 +22,7 @@ export default function NewAgentPage({ onCreated }: { onCreated: () => void }) {
     'You are a helpful local AI assistant with access to workspace tools.'
   );
   const [avatarColor, setAvatarColor] = useState<string>(AVATAR_COLORS[0]);
-  const [avatarShape, setAvatarShape] = useState<'circle' | 'rounded' | 'square'>('circle');
+  const [avatarShape, setAvatarShape] = useState<'circle' | 'rounded' | 'square' | 'blob' | 'pebble'>('blob');
   const [error, setError] = useState('');
 
   const submit = async (e: React.FormEvent) => {
@@ -105,12 +105,14 @@ export default function NewAgentPage({ onCreated }: { onCreated: () => void }) {
             className="mt-1 w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2"
             value={avatarShape}
             onChange={(e) =>
-              setAvatarShape(e.target.value as 'circle' | 'rounded' | 'square')
+              setAvatarShape(e.target.value as 'circle' | 'rounded' | 'square' | 'blob' | 'pebble')
             }
           >
             <option value="circle">circle</option>
             <option value="rounded">rounded</option>
             <option value="square">square</option>
+            <option value="blob">blob</option>
+            <option value="pebble">pebble</option>
           </select>
         </label>
         <label className="block text-sm">

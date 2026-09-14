@@ -10,6 +10,7 @@ import type {
 } from '@grok-bot/shared';
 import { api, streamChat, streamWidgetSelect } from '../lib/api';
 import AgentAvatar from '../components/AgentAvatar';
+import AgentInfoPane from '../components/AgentInfoPane';
 
 type UiMsg = {
   id: string;
@@ -32,6 +33,7 @@ export default function ChatPage(_props: { onAgentsChange?: () => void }) {
   const [memory, setMemory] = useState<MemoryEntry[]>([]);
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
   const [showInbox, setShowInbox] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
   const [sendTo, setSendTo] = useState('');
   const [sendBody, setSendBody] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -223,15 +225,21 @@ export default function ChatPage(_props: { onAgentsChange?: () => void }) {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <header className="shrink-0 border-b border-zinc-800 px-5 py-3 flex items-center justify-between bg-zinc-950/80 backdrop-blur">
-        <div className="flex items-center gap-3 min-w-0">
-          <AgentAvatar agent={agent} size={36} />
+    <div className="h-full flex">
+    <div className="flex-1 min-w-0 flex flex-col">
+      <header className="shrink-0 border-b border-zinc-800 px-4 py-2.5 flex items-center justify-between bg-zinc-950/80 backdrop-blur">
+        <button
+          type="button"
+          onClick={() => setShowInfo((v) => !v)}
+          className="flex items-center gap-2.5 min-w-0 rounded-lg hover:bg-zinc-900/80 px-1.5 py-1 -ml-1.5 text-left transition"
+          title="Agent details"
+        >
+          <AgentAvatar agent={agent} size={32} />
           <div className="min-w-0">
-            <h1 className="font-semibold truncate">{agent.title}</h1>
-            <p className="text-xs text-zinc-500 truncate max-w-xl">{agent.description}</p>
+            <h1 className="font-semibold text-[13px] truncate">{agent.title}</h1>
+            <p className="text-[11px] text-zinc-500 truncate max-w-xl">{agent.description}</p>
           </div>
-        </div>
+        </button>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowInbox((v) => !v)}
@@ -360,6 +368,21 @@ export default function ChatPage(_props: { onAgentsChange?: () => void }) {
           </button>
         </div>
       </form>
+    </div>
+    {showInfo && (
+      <AgentInfoPane
+        agent={agent}
+        onClose={() => setShowInfo(false)}
+        onUpdated={() => {
+          void api.listAgents().then((list) => {
+            const a = list.find((x) => x.id === agentId);
+            if (a) setAgent(a);
+            setAgents(list);
+          });
+          _props.onAgentsChange?.();
+        }}
+      />
+    )}
     </div>
   );
 }

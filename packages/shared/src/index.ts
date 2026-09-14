@@ -5,7 +5,7 @@ export interface Agent {
   description: string;
   systemPrompt: string;
   avatarColor: string;
-  avatarShape: 'circle' | 'rounded' | 'square';
+  avatarShape: 'circle' | 'rounded' | 'square' | 'blob' | 'pebble';
   createdAt: string;
   updatedAt: string;
 }
@@ -16,7 +16,7 @@ export interface CreateAgentInput {
   description?: string;
   systemPrompt?: string;
   avatarColor?: string;
-  avatarShape?: 'circle' | 'rounded' | 'square';
+  avatarShape?: 'circle' | 'rounded' | 'square' | 'blob' | 'pebble';
 }
 
 export interface UpdateAgentInput {
@@ -25,7 +25,7 @@ export interface UpdateAgentInput {
   description?: string;
   systemPrompt?: string;
   avatarColor?: string;
-  avatarShape?: 'circle' | 'rounded' | 'square';
+  avatarShape?: 'circle' | 'rounded' | 'square' | 'blob' | 'pebble';
 }
 
 export type MessageKind = 'text' | 'widget' | 'tool_card' | 'system';

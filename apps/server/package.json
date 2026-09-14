@@ -1,6 +1,6 @@
 {
   "name": "@grok-bot/server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "main": "./dist/index.js",
   "scripts": {
@@ -25,5 +25,8 @@
     "@types/uuid": "^10.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.63.0"
   }
 }

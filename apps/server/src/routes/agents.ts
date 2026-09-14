@@ -1,12 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import type { CreateAgentInput, UpdateAgentInput } from '@grok-bot/shared';
-import type { AgentRepo, MessageRepo, MemoryRepo } from '../db/repos';
+import type { AgentRepo, MessageRepo, MemoryRepo, InboxRepo } from '../db/repos';
 
 export function registerAgentRoutes(
   app: FastifyInstance,
   agents: AgentRepo,
   messages: MessageRepo,
-  memory: MemoryRepo
+  memory: MemoryRepo,
+  inbox: InboxRepo
 ): void {
   app.get('/api/agents', async () => agents.list());
 
@@ -29,6 +30,8 @@ export function registerAgentRoutes(
       title: body.title.trim(),
       description: body.description,
       systemPrompt: body.systemPrompt,
+      avatarColor: body.avatarColor,
+      avatarShape: body.avatarShape,
     });
     return reply.code(201).send(created);
   });
@@ -70,4 +73,71 @@ export function registerAgentRoutes(
     if (!agents.get(req.params.id)) return reply.code(404).send({ error: 'Agent not found' });
     return memory.list(req.params.id);
   });
+
+  app.post<{
+    Params: { id: string };
+    Body: { key: string; value: string; tier?: string; scope?: string };
+  }>('/api/agents/:id/memory', async (req, reply) => {
+    if (!agents.get(req.params.id)) return reply.code(404).send({ error: 'Agent not found' });
+    const { key, value, tier, scope } = req.body ?? {};
+    if (!key?.trim() || value === undefined) {
+      return reply.code(400).send({ error: 'key and value required' });
+    }
+    const entry = memory.write(
+      req.params.id,
+      key.trim(),
+      String(value),
+      (tier as 'profile' | 'log' | 'note') || 'note',
+      (scope as 'agent' | 'user') || 'agent'
+    );
+    return reply.code(201).send(entry);
+  });
+
+  app.delete<{ Params: { id: string; key: string } }>(
+    '/api/agents/:id/memory/:key',
+    async (req, reply) => {
+      if (!agents.get(req.params.id)) return reply.code(404).send({ error: 'Agent not found' });
+      const ok = memory.forget(req.params.id, decodeURIComponent(req.params.key));
+      if (!ok) return reply.code(404).send({ error: 'Memory key not found' });
+      return { ok: true };
+    }
+  );
+
+  // Agent-to-agent inbox
+  app.get<{ Params: { id: string } }>('/api/agents/:id/inbox', async (req, reply) => {
+    if (!agents.get(req.params.id)) return reply.code(404).send({ error: 'Agent not found' });
+    return inbox.list(req.params.id);
+  });
+
+  app.post<{
+    Params: { id: string };
+    Body: { toAgentId?: string; toAgent?: string; message: string };
+  }>('/api/agents/:id/inbox', async (req, reply) => {
+    const from = agents.get(req.params.id);
+    if (!from) return reply.code(404).send({ error: 'Agent not found' });
+    const { message, toAgentId, toAgent } = req.body ?? {};
+    if (!message?.trim()) return reply.code(400).send({ error: 'message required' });
+    const dest =
+      (toAgentId && agents.get(toAgentId)) ||
+      (toAgent && agents.getByName(toAgent)) ||
+      null;
+    if (!dest) return reply.code(404).send({ error: 'Target agent not found' });
+    const msg = inbox.send(from.id, dest.id, message.trim());
+    messages.add({
+      agentId: dest.id,
+      role: 'system',
+      content: `[Message from @${from.name}] ${message.trim()}`,
+      kind: 'system',
+    });
+    return reply.code(201).send(msg);
+  });
+
+  app.post<{ Params: { id: string; msgId: string } }>(
+    '/api/agents/:id/inbox/:msgId/read',
+    async (req, reply) => {
+      if (!agents.get(req.params.id)) return reply.code(404).send({ error: 'Agent not found' });
+      inbox.markRead(req.params.msgId);
+      return { ok: true };
+    }
+  );
 }

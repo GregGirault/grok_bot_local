@@ -1,3 +1,8 @@
+---
+name: code-review
+description: Structured code review checklist for local workspace changes
+---
+
 # Code review skill
 
 When the user asks for a code review:

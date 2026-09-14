@@ -2,6 +2,17 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 
+const AVATAR_COLORS = [
+  '#8b5cf6',
+  '#06b6d4',
+  '#10b981',
+  '#f59e0b',
+  '#ef4444',
+  '#ec4899',
+  '#3b82f6',
+  '#84cc16',
+] as const;
+
 export default function NewAgentPage({ onCreated }: { onCreated: () => void }) {
   const navigate = useNavigate();
   const [name, setName] = useState('');
@@ -10,6 +21,8 @@ export default function NewAgentPage({ onCreated }: { onCreated: () => void }) {
   const [systemPrompt, setSystemPrompt] = useState(
     'You are a helpful local AI assistant with access to workspace tools.'
   );
+  const [avatarColor, setAvatarColor] = useState<string>(AVATAR_COLORS[0]);
+  const [avatarShape, setAvatarShape] = useState<'circle' | 'rounded' | 'square'>('circle');
   const [error, setError] = useState('');
 
   const submit = async (e: React.FormEvent) => {
@@ -21,6 +34,8 @@ export default function NewAgentPage({ onCreated }: { onCreated: () => void }) {
         title: title.trim(),
         description,
         systemPrompt,
+        avatarColor,
+        avatarShape,
       });
       onCreated();
       navigate(`/chat/${agent.id}`);
@@ -61,6 +76,42 @@ export default function NewAgentPage({ onCreated }: { onCreated: () => void }) {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
+        </label>
+        <div>
+          <div className="text-sm text-zinc-400 mb-2">Avatar color</div>
+          <div className="flex flex-wrap gap-2">
+            {AVATAR_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setAvatarColor(c)}
+                className={`h-8 w-8 border-2 ${
+                  avatarColor === c ? 'border-white' : 'border-transparent'
+                } ${
+                  avatarShape === 'square'
+                    ? 'rounded-md'
+                    : avatarShape === 'rounded'
+                      ? 'rounded-xl'
+                      : 'rounded-full'
+                }`}
+                style={{ background: c }}
+              />
+            ))}
+          </div>
+        </div>
+        <label className="block text-sm">
+          <span className="text-zinc-400">Avatar shape</span>
+          <select
+            className="mt-1 w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2"
+            value={avatarShape}
+            onChange={(e) =>
+              setAvatarShape(e.target.value as 'circle' | 'rounded' | 'square')
+            }
+          >
+            <option value="circle">circle</option>
+            <option value="rounded">rounded</option>
+            <option value="square">square</option>
+          </select>
         </label>
         <label className="block text-sm">
           <span className="text-zinc-400">System prompt</span>

@@ -1,10 +1,12 @@
 # Grok Bot Local
 
-Local free Grok Bot clone MVP — chat with Ollama, tools, memory, skills, and cron routines.
+Local free Grok Bot clone Phase 1 — chat with Ollama, tools, memory, skills, and cron routines.
 
 **Stack:** Node 20 · TypeScript · npm workspaces · Fastify · better-sqlite3 · Vite · React · Tailwind
 
 ---
+
+See **[docs/PARITY.md](docs/PARITY.md)** for the feature gap map (DONE / PARTIAL / TODO).
 
 ## English — Install & run
 
@@ -12,7 +14,7 @@ Local free Grok Bot clone MVP — chat with Ollama, tools, memory, skills, and c
 
 - Node.js **20+**
 - [Ollama](https://ollama.com) running locally (`http://127.0.0.1:11434`)
-- A model pulled, e.g. `ollama pull llama3.2`
+- A model pulled, e.g. `ollama pull qwen2.5:7b`
 - Build tools for native modules (`better-sqlite3`): on Debian/Ubuntu `build-essential python3`
 
 ### Install
@@ -48,7 +50,7 @@ Settings are stored in SQLite (`data/grok_bot.db`) and editable in the **Setting
 | Key | Default |
 |-----|---------|
 | `ollamaBaseUrl` | `http://127.0.0.1:11434` |
-| `defaultModel` | `llama3.2` |
+| `defaultModel` | `qwen2.5:7b` |
 | `workspaceRoot` | `<repo>/workspace` (created at runtime) |
 
 Add markdown skills under `skills/`. Agent tools are scoped to `workspaceRoot`.
@@ -68,7 +70,7 @@ git push -u origin main
 
 - Node.js **20+**
 - [Ollama](https://ollama.com) en local (`http://127.0.0.1:11434`)
-- Un modèle téléchargé, ex. `ollama pull llama3.2`
+- Un modèle téléchargé, ex. `ollama pull qwen2.5:7b`
 - Outils de compilation pour les modules natifs (`better-sqlite3`) : sous Debian/Ubuntu `build-essential python3`
 
 ### Installation
@@ -102,7 +104,7 @@ Les réglages sont dans SQLite (`data/grok_bot.db`), modifiables via la page **S
 | Clé | Défaut |
 |-----|--------|
 | `ollamaBaseUrl` | `http://127.0.0.1:11434` |
-| `defaultModel` | `llama3.2` |
+| `defaultModel` | `qwen2.5:7b` |
 | `workspaceRoot` | `<repo>/workspace` |
 
 Ajoutez des skills markdown dans `skills/`. Les outils agent sont limités à `workspaceRoot`.

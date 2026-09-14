@@ -1,0 +1,34 @@
+{
+  "servers": [
+    {
+      "name": "filesystem",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "disabled": true,
+      "tools": [
+        {
+          "name": "list_files",
+          "description": "List files (example static advertisement)",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": { "type": "string" }
+            },
+            "required": ["path"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "remote_demo",
+      "url": "http://127.0.0.1:3100/sse",
+      "disabled": true,
+      "tools": [
+        {
+          "name": "echo",
+          "description": "Echo tool advertised before live session"
+        }
+      ]
+    }
+  ]
+}

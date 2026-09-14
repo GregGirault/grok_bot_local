@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { HealthStatus, Settings, Routine } from '@grok-bot/shared';
+import type { HealthStatus, Settings, BackgroundTask } from '@grok-bot/shared';
 import { api } from '../lib/api';
 
 export default function SettingsPage({
@@ -11,33 +11,28 @@ export default function SettingsPage({
 }) {
   const [form, setForm] = useState<Settings | null>(null);
   const [models, setModels] = useState<string[]>([]);
-  const [skills, setSkills] = useState<Array<{ name: string; preview: string }>>([]);
-  const [routines, setRoutines] = useState<Routine[]>([]);
-  const [agents, setAgents] = useState<Array<{ id: string; name: string }>>([]);
   const [status, setStatus] = useState('');
-  const [newRoutine, setNewRoutine] = useState({
-    agentId: '',
-    name: '',
-    cron: '0 9 * * *',
-    prompt: 'Give me a brief morning status of the workspace.',
-  });
+  const [mcp, setMcp] = useState<{ servers: string[]; tools: string[] } | null>(null);
+  const [tasks, setTasks] = useState<BackgroundTask[]>([]);
+  const [agents, setAgents] = useState<Array<{ id: string; name: string }>>([]);
+  const [taskForm, setTaskForm] = useState({ agentId: '', prompt: '' });
 
   useEffect(() => {
     void (async () => {
-      const [s, sk, r, a] = await Promise.all([
+      const [s, a, t, m] = await Promise.all([
         api.getSettings(),
-        api.listSkills(),
-        api.listRoutines(),
         api.listAgents(),
+        api.listTasks(),
+        api.getMcp().catch(() => ({ servers: [], tools: [] })),
       ]);
       setForm(s);
-      setSkills(sk);
-      setRoutines(r);
       setAgents(a.map((x) => ({ id: x.id, name: x.name })));
-      setNewRoutine((nr) => ({ ...nr, agentId: a[0]?.id ?? '' }));
+      setTasks(t);
+      setMcp(m);
+      setTaskForm((f) => ({ ...f, agentId: a[0]?.id ?? '' }));
       try {
-        const m = await api.listModels();
-        setModels(m.models);
+        const mods = await api.listModels();
+        setModels(mods.models);
       } catch {
         setModels([]);
       }
@@ -52,16 +47,14 @@ export default function SettingsPage({
     setTimeout(() => setStatus(''), 2000);
   };
 
-  const addRoutine = async () => {
-    if (!newRoutine.agentId || !newRoutine.name) return;
-    const created = await api.createRoutine(newRoutine);
-    setRoutines((prev) => [...prev, created]);
-    setNewRoutine((nr) => ({ ...nr, name: '' }));
-  };
-
-  const removeRoutine = async (id: string) => {
-    await api.deleteRoutine(id);
-    setRoutines((prev) => prev.filter((r) => r.id !== id));
+  const enqueue = async () => {
+    if (!taskForm.agentId || !taskForm.prompt.trim()) return;
+    const task = await api.createTask({
+      agentId: taskForm.agentId,
+      prompt: taskForm.prompt.trim(),
+    });
+    setTasks((prev) => [task, ...prev]);
+    setTaskForm((f) => ({ ...f, prompt: '' }));
   };
 
   if (!form) {
@@ -71,7 +64,7 @@ export default function SettingsPage({
   return (
     <div className="h-full overflow-y-auto p-8 max-w-3xl">
       <h1 className="text-2xl font-semibold mb-1">Settings</h1>
-      <p className="text-sm text-zinc-500 mb-8">Ollama, workspace, skills & routines</p>
+      <p className="text-sm text-zinc-500 mb-8">Ollama, workspace, MCP & background tasks</p>
 
       <section className="mb-8 rounded-xl border border-zinc-800 bg-zinc-950 p-5 space-y-4">
         <h2 className="font-medium text-zinc-200">Connection</h2>
@@ -118,7 +111,7 @@ export default function SettingsPage({
           Health:{' '}
           {health?.ollama?.reachable ? (
             <span className="text-emerald-400">
-              OK · {(health.ollama.models ?? []).length} model(s)
+              OK · {(health.ollama.models ?? []).length} model(s) · v{health.version}
             </span>
           ) : (
             <span className="text-amber-400">
@@ -129,90 +122,86 @@ export default function SettingsPage({
       </section>
 
       <section className="mb-8 rounded-xl border border-zinc-800 bg-zinc-950 p-5">
-        <h2 className="font-medium text-zinc-200 mb-3">Skills</h2>
-        {skills.length === 0 ? (
-          <p className="text-sm text-zinc-500">No skills in skills/ folder.</p>
+        <h2 className="font-medium text-zinc-200 mb-2">MCP connectors</h2>
+        <p className="text-xs text-zinc-500 mb-3">
+          Configure servers in <code className="text-zinc-400">config/mcp.json</code> (see{' '}
+          <code className="text-zinc-400">config/mcp.example.json</code>).
+        </p>
+        {mcp && mcp.servers.length === 0 ? (
+          <p className="text-sm text-zinc-500">No MCP servers configured (default).</p>
         ) : (
-          <ul className="space-y-2">
-            {skills.map((s) => (
-              <li key={s.name} className="text-sm">
-                <span className="text-violet-400 font-mono">{s.name}</span>
-                <p className="text-zinc-500 text-xs mt-0.5">{s.preview}…</p>
-              </li>
-            ))}
-          </ul>
+          <div className="text-sm text-zinc-300">
+            Servers: {mcp?.servers.join(', ')}
+            <div className="text-xs text-zinc-500 mt-1 font-mono">
+              Tools: {(mcp?.tools || []).join(', ') || '(none)'}
+            </div>
+          </div>
         )}
       </section>
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-5">
-        <h2 className="font-medium text-zinc-200 mb-3">Routines</h2>
-        <ul className="space-y-2 mb-4">
-          {routines.map((r) => (
-            <li
-              key={r.id}
-              className="flex items-center justify-between text-sm bg-zinc-900 rounded-lg px-3 py-2 border border-zinc-800"
-            >
-              <div>
-                <div className="font-medium">{r.name}</div>
-                <div className="text-xs text-zinc-500 font-mono">
-                  {r.cron} · {r.enabled ? 'on' : 'off'}
-                  {r.lastRunAt ? ` · last ${r.lastRunAt}` : ''}
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => void api.runRoutine(r.id)}
-                  className="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700"
-                >
-                  Run
-                </button>
-                <button
-                  onClick={() => void removeRoutine(r.id)}
-                  className="text-xs px-2 py-1 rounded bg-red-950 hover:bg-red-900 text-red-300"
-                >
-                  Delete
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <h2 className="font-medium text-zinc-200 mb-3">Background tasks</h2>
+        <div className="flex flex-wrap gap-2 mb-3">
           <select
             className="rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm"
-            value={newRoutine.agentId}
-            onChange={(e) => setNewRoutine({ ...newRoutine, agentId: e.target.value })}
+            value={taskForm.agentId}
+            onChange={(e) => setTaskForm({ ...taskForm, agentId: e.target.value })}
           >
             {agents.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.name}
+                @{a.name}
               </option>
             ))}
           </select>
           <input
-            placeholder="Routine name"
-            className="rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm"
-            value={newRoutine.name}
-            onChange={(e) => setNewRoutine({ ...newRoutine, name: e.target.value })}
+            className="flex-1 min-w-[200px] rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm"
+            placeholder="Prompt for background agent run…"
+            value={taskForm.prompt}
+            onChange={(e) => setTaskForm({ ...taskForm, prompt: e.target.value })}
           />
-          <input
-            placeholder="Cron (e.g. 0 9 * * *)"
-            className="rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm font-mono"
-            value={newRoutine.cron}
-            onChange={(e) => setNewRoutine({ ...newRoutine, cron: e.target.value })}
-          />
-          <input
-            placeholder="Wake prompt"
-            className="rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm"
-            value={newRoutine.prompt}
-            onChange={(e) => setNewRoutine({ ...newRoutine, prompt: e.target.value })}
-          />
+          <button
+            onClick={() => void enqueue()}
+            className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm"
+          >
+            Enqueue
+          </button>
+          <button
+            onClick={() => void api.listTasks().then(setTasks)}
+            className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm"
+          >
+            Refresh
+          </button>
         </div>
-        <button
-          onClick={() => void addRoutine()}
-          className="mt-3 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm"
-        >
-          Add routine
-        </button>
+        <ul className="space-y-2">
+          {tasks.length === 0 && (
+            <li className="text-sm text-zinc-500">No tasks yet.</li>
+          )}
+          {tasks.map((t) => (
+            <li
+              key={t.id}
+              className="text-xs rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2"
+            >
+              <span
+                className={
+                  t.status === 'done'
+                    ? 'text-emerald-400'
+                    : t.status === 'error'
+                      ? 'text-red-400'
+                      : 'text-amber-400'
+                }
+              >
+                [{t.status}]
+              </span>{' '}
+              <span className="text-zinc-400">{t.prompt.slice(0, 80)}</span>
+              {t.result && (
+                <pre className="mt-1 text-zinc-500 whitespace-pre-wrap max-h-24 overflow-y-auto">
+                  {t.result.slice(0, 500)}
+                </pre>
+              )}
+              {t.error && <div className="text-red-400 mt-1">{t.error}</div>}
+            </li>
+          ))}
+        </ul>
       </section>
     </div>
   );

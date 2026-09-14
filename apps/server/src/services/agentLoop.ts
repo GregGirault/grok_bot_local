@@ -1,9 +1,16 @@
 import { v4 as uuid } from 'uuid';
 import type { Agent } from '@grok-bot/shared';
-import type { MessageRepo, MemoryRepo, SettingsRepo } from '../db/repos';
+import type {
+  MessageRepo,
+  MemoryRepo,
+  SettingsRepo,
+  AgentRepo,
+  InboxRepo,
+} from '../db/repos';
 import { OllamaClient, type ChatMessageParam, type ToolCall } from './ollama';
-import { TOOL_DEFS, executeTool, type ToolContext } from '../tools';
+import { getToolDefs, executeTool, type ToolContext } from '../tools';
 import { loadSkills, formatSkillsForPrompt } from './skills';
+import type { LoadedMcp } from './mcp';
 
 export type SseWriter = (event: string, data: unknown) => void;
 
@@ -13,6 +20,9 @@ export interface AgentLoopDeps {
   settings: SettingsRepo;
   skillsDir: string;
   defaultWorkspace: string;
+  agents?: AgentRepo;
+  inbox?: InboxRepo;
+  mcp?: LoadedMcp;
 }
 
 const MAX_TOOL_ROUNDS = 8;
@@ -47,9 +57,7 @@ export async function runAgentChat(
     `\n\nWorkspace root: ${workspaceRoot}\nUse tools when helpful. Current date: ${new Date().toISOString().slice(0, 10)}.`;
 
   const history = deps.messages.listByAgent(agent.id, 40);
-  const llmMessages: ChatMessageParam[] = [
-    { role: 'system', content: systemPrompt },
-  ];
+  const llmMessages: ChatMessageParam[] = [{ role: 'system', content: systemPrompt }];
 
   for (const m of history) {
     if (m.role === 'tool') {
@@ -60,6 +68,7 @@ export async function runAgentChat(
         name: m.toolName,
       });
     } else if (m.role === 'user' || m.role === 'assistant') {
+      if (m.kind === 'widget') continue;
       llmMessages.push({ role: m.role, content: m.content });
     }
   }
@@ -68,22 +77,28 @@ export async function runAgentChat(
     workspaceRoot,
     agentId: agent.id,
     memory: deps.memory,
+    agents: deps.agents,
+    inbox: deps.inbox,
+    messages: deps.messages,
+    mcp: deps.mcp,
+    onWidget: (widget) => {
+      write('widget', widget);
+    },
   };
 
+  const toolDefs = getToolDefs(deps.mcp);
   let rounds = 0;
   while (rounds < MAX_TOOL_ROUNDS) {
     rounds++;
     let assistantText = '';
-    const toolCallBuilders: Map<
-      number,
-      { id: string; name: string; arguments: string }
-    > = new Map();
+    const toolCallBuilders: Map<number, { id: string; name: string; arguments: string }> =
+      new Map();
 
     try {
       for await (const chunk of ollama.chatStream({
         model: useModel,
         messages: llmMessages,
-        tools: TOOL_DEFS,
+        tools: toolDefs,
         signal,
       })) {
         const delta = chunk.choices[0]?.delta;
@@ -133,8 +148,8 @@ export async function runAgentChat(
       return;
     }
 
-    // Persist assistant message with tool calls (content may be empty)
-    const assistantRecord = assistantText || `(calling ${toolCalls.map((t) => t.function.name).join(', ')})`;
+    const assistantRecord =
+      assistantText || `(calling ${toolCalls.map((t) => t.function.name).join(', ')})`;
     deps.messages.add({
       agentId: agent.id,
       role: 'assistant',
@@ -162,17 +177,30 @@ export async function runAgentChat(
         result: result.slice(0, 8000),
       });
 
-      if (tc.function.name === 'write_memory' || tc.function.name === 'forget_memory') {
-        write('memory', { entries: deps.memory.list(agent.id) });
-      }
-
+      // Persist collapsed tool card for UI history
       deps.messages.add({
         agentId: agent.id,
         role: 'tool',
         content: result,
+        kind: 'tool_card',
         toolName: tc.function.name,
         toolCallId: tc.id,
+        meta: {
+          type: 'tool_card',
+          toolName: tc.function.name,
+          arguments: tc.function.arguments,
+          result: result.slice(0, 8000),
+          callId: tc.id,
+        },
       });
+
+      if (
+        tc.function.name === 'write_memory' ||
+        tc.function.name === 'forget_memory' ||
+        tc.function.name === 'recall_memory'
+      ) {
+        write('memory', { entries: deps.memory.list(agent.id) });
+      }
 
       llmMessages.push({
         role: 'tool',
@@ -186,14 +214,14 @@ export async function runAgentChat(
   write('done', { content: '(max tool rounds reached)' });
 }
 
-/** Non-streaming wake for routines */
+/** Non-streaming wake for routines / background tasks */
 export async function wakeAgent(
   agent: Agent,
   prompt: string,
   deps: AgentLoopDeps
 ): Promise<string> {
   let final = '';
-  await runAgentChat(agent, `[Routine wake]\n${prompt}`, undefined, (event, data) => {
+  await runAgentChat(agent, prompt, undefined, (event, data) => {
     if (event === 'token' && data && typeof data === 'object' && 'content' in data) {
       final += String((data as { content: string }).content);
     }

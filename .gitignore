@@ -3,6 +3,8 @@ dist/
 data/
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 .env
 .env.local
 .DS_Store
@@ -14,3 +16,5 @@ apps/web/dist/
 apps/server/dist/
 packages/shared/dist/
 apps/desktop/node_modules/
+agent-tools/
+grok-bot-pc.json

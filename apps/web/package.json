@@ -1,12 +1,12 @@
 {
   "name": "@grok-bot/web",
-  "version": "0.4.0",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --port 43123 --strictPort",
+    "dev": "vite --host 0.0.0.0 --port 48731",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --port 43123",
+    "preview": "vite preview --host 0.0.0.0 --port 48731",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

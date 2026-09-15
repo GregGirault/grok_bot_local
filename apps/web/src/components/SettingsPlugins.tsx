@@ -195,25 +195,25 @@ export function SettingsPlugins({
                         {t(lang, 'mcpEmpty')}
                       </p>
                     )}
-                    {(mcp?.servers ?? []).map((srv) => (
+                    {(mcp?.servers ?? []).map((s) => (
                       <label
-                        key={srv.name}
+                        key={s.name}
                         className="flex items-center justify-between rounded-xl border border-zinc-800 px-3 py-2 text-[12px]"
                       >
                         <span className="min-w-0">
-                          <span className="block font-medium truncate">{srv.name}</span>
+                          <span className="block font-medium truncate">{s.name}</span>
                           <span className="block text-[11px] font-mono truncate" style={{ color: 'var(--gb-muted)' }}>
-                            {srv.command || srv.url || '—'}
-                            {srv.tools.length ? ` · ${srv.tools.join(', ')}` : ''}
+                            {s.command || s.url || '—'}
+                            {s.tools.length ? ` · ${s.tools.join(', ')}` : ''}
                           </span>
                         </span>
                         <span className="flex items-center gap-2 shrink-0">
                           <span>{t(lang, 'mcpEnabled')}</span>
                           <input
                             type="checkbox"
-                            checked={!srv.disabled}
+                            checked={!s.disabled}
                             onChange={(e) =>
-                              void api.toggleMcp(srv.name, !e.target.checked).then((m) => {
+                              void api.toggleMcp(s.name, !e.target.checked).then((m) => {
                                 setMcp(m);
                                 setMcpRaw(JSON.stringify(m.raw ?? m.servers, null, 2));
                               })

@@ -1,81 +1,20 @@
-export type Lang = 'en' | 'fr';
+import { FR } from './i18nFr';
+import { EN } from './i18nEn';
 
-const DICT = {
-  en: {
-    agents: 'Agents',
-    channels: 'Channels',
-    memory: 'Memory',
-    routines: 'Routines',
-    skills: 'Skills',
-    projects: 'Projects',
-    settings: 'Settings',
-    account: 'Account · Settings',
-    hiddenChats: 'Hidden chats',
-    none: 'None',
-    newAgent: '+ New',
-    online: 'Online',
-    ollamaOffline: 'Ollama offline',
-    general: 'General',
-    computer: 'Computer',
-    connection: 'Connection',
-    tasks: 'Tasks',
-    updates: 'Updates',
-    connectors: 'Connectors',
-    theme: 'Theme',
-    language: 'Language',
-    accent: 'Accent color',
-    send: 'Send',
-    clear: 'Clear',
-    inbox: 'Inbox',
-    hide: 'Hide',
-    unhide: 'Restore',
-    delete: 'Delete…',
-    openChat: 'Open chat',
-    typing: 'typing',
-  },
-  fr: {
-    agents: 'Agents',
-    channels: 'Canaux',
-    memory: 'Mémoire',
-    routines: 'Routines',
-    skills: 'Compétences',
-    projects: 'Projets',
-    settings: 'Réglages',
-    account: 'Compte · Réglages',
-    hiddenChats: 'Chats masqués',
-    none: 'Aucun',
-    newAgent: '+ Nouveau',
-    online: 'En ligne',
-    ollamaOffline: 'Ollama hors ligne',
-    general: 'Général',
-    computer: 'Ordinateur',
-    connection: 'Connexion',
-    tasks: 'Tâches',
-    updates: 'Mises à jour',
-    connectors: 'Connecteurs',
-    theme: 'Thème',
-    language: 'Langue',
-    accent: 'Couleur d’accent',
-    send: 'Envoyer',
-    clear: 'Effacer',
-    inbox: 'Boîte',
-    hide: 'Masquer',
-    unhide: 'Restaurer',
-    delete: 'Supprimer…',
-    openChat: 'Ouvrir',
-    typing: 'écrit',
-  },
-} as const;
+export type Lang = 'fr' | 'en';
 
-export type I18nKey = keyof typeof DICT.en;
+const DICT = { fr: FR, en: EN };
+
+export type I18nKey = keyof typeof DICT.fr;
 
 export function t(lang: Lang, key: I18nKey): string {
-  return DICT[lang][key] || DICT.en[key] || key;
+  return DICT[lang][key] || DICT.fr[key];
 }
 
 export function loadLang(): Lang {
   const v = localStorage.getItem('gb-lang');
-  return v === 'fr' ? 'fr' : 'en';
+  if (v === 'en' || v === 'fr') return v;
+  return 'fr';
 }
 
 export function saveLang(lang: Lang): void {
@@ -84,12 +23,11 @@ export function saveLang(lang: Lang): void {
 
 export function applyTheme(theme: 'dark' | 'light' | 'system'): void {
   localStorage.setItem('gb-theme', theme);
-  let resolved = theme;
+  let resolved: 'dark' | 'light' = theme === 'system' ? 'dark' : theme;
   if (theme === 'system') {
     resolved = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
   }
   document.documentElement.setAttribute('data-theme', resolved);
-  document.documentElement.style.colorScheme = resolved;
 }
 
 export function applyAccent(color: string): void {
@@ -97,11 +35,43 @@ export function applyAccent(color: string): void {
   document.documentElement.style.setProperty('--gb-accent', color);
 }
 
-export function initChromePrefs(): { theme: string; lang: Lang; accent: string } {
+export function initChromePrefs(): { theme: 'dark' | 'light' | 'system'; lang: Lang; accent: string } {
   const theme = (localStorage.getItem('gb-theme') as 'dark' | 'light' | 'system') || 'dark';
   const lang = loadLang();
   const accent = localStorage.getItem('gb-accent') || '#8b5cf6';
   applyTheme(theme);
   applyAccent(accent);
   return { theme, lang, accent };
+}
+
+export function formatTime(iso: string, lang: Lang): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) {
+    return d.toLocaleTimeString(lang === 'fr' ? 'fr-FR' : 'en-US', { hour: 'numeric', minute: '2-digit' });
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return lang === 'fr' ? 'Hier' : 'Yesterday';
+  return d.toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-US', { weekday: 'long' });
+}
+
+export function presenceLabel(lang: Lang, p: string): string {
+  switch (p) {
+    case 'thinking':
+      return t(lang, 'thinking');
+    case 'working':
+      return t(lang, 'working');
+    case 'waiting':
+      return t(lang, 'waiting');
+    case 'blocked':
+      return t(lang, 'blocked');
+    case 'done':
+      return t(lang, 'done');
+    case 'idle':
+      return t(lang, 'idle');
+    default:
+      return t(lang, 'idle');
+  }
 }

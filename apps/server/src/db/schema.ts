@@ -12,10 +12,21 @@ CREATE TABLE IF NOT EXISTS agents (
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   system_prompt TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT '',
+  hf_model TEXT NOT NULL DEFAULT '',
+  model_provider TEXT NOT NULL DEFAULT 'ollama',
   avatar_color TEXT NOT NULL DEFAULT '#8b5cf6',
-  avatar_shape TEXT NOT NULL DEFAULT 'circle',
+  avatar_shape TEXT NOT NULL DEFAULT 'blob',
+  accessory TEXT NOT NULL DEFAULT 'none',
   hidden INTEGER NOT NULL DEFAULT 0,
+  pinned INTEGER NOT NULL DEFAULT 0,
   notify_on_updates INTEGER NOT NULL DEFAULT 1,
+  last_preview TEXT NOT NULL DEFAULT '',
+  last_activity_at TEXT NOT NULL,
+  unread INTEGER NOT NULL DEFAULT 0,
+  attention TEXT NOT NULL DEFAULT 'none',
+  presence TEXT NOT NULL DEFAULT 'idle',
+  current_action TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -30,6 +41,8 @@ CREATE TABLE IF NOT EXISTS messages (
   tool_name TEXT,
   tool_call_id TEXT,
   attachments TEXT,
+  reactions TEXT,
+  reply_to_id TEXT,
   edited_at TEXT,
   created_at TEXT NOT NULL,
   FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
@@ -85,24 +98,22 @@ CREATE TABLE IF NOT EXISTS agent_inbox (
   to_agent_id TEXT NOT NULL,
   content TEXT NOT NULL,
   read INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL,
-  FOREIGN KEY (from_agent_id) REFERENCES agents(id) ON DELETE CASCADE,
-  FOREIGN KEY (to_agent_id) REFERENCES agents(id) ON DELETE CASCADE
+  created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS channels (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
   description TEXT NOT NULL DEFAULT '',
+  last_preview TEXT NOT NULL DEFAULT '',
+  last_activity_at TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS channel_members (
   channel_id TEXT NOT NULL,
   agent_id TEXT NOT NULL,
-  PRIMARY KEY (channel_id, agent_id),
-  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
-  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+  PRIMARY KEY (channel_id, agent_id)
 );
 
 CREATE TABLE IF NOT EXISTS channel_messages (
@@ -110,8 +121,7 @@ CREATE TABLE IF NOT EXISTS channel_messages (
   channel_id TEXT NOT NULL,
   from_agent_id TEXT,
   content TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
+  created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
@@ -124,8 +134,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   parent_task_id TEXT,
   post_to_chat INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
-  finished_at TEXT,
-  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+  finished_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS machines (
@@ -140,16 +149,8 @@ CREATE TABLE IF NOT EXISTS team_members (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   email TEXT,
-  role TEXT NOT NULL DEFAULT 'member',
+  role TEXT NOT NULL DEFAULT 'membre',
   created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS channel_team_members (
-  channel_id TEXT NOT NULL,
-  member_id TEXT NOT NULL,
-  PRIMARY KEY (channel_id, member_id),
-  FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
-  FOREIGN KEY (member_id) REFERENCES team_members(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS projects (
@@ -168,8 +169,7 @@ CREATE TABLE IF NOT EXISTS approvals (
   command TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending',
   created_at TEXT NOT NULL,
-  resolved_at TEXT,
-  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+  resolved_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS uploads (
@@ -183,116 +183,46 @@ CREATE TABLE IF NOT EXISTS uploads (
 );
 `;
 
-function hasColumn(db: Db, table: string, column: string): boolean {
-  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-  return cols.some((c) => c.name === column);
-}
-
-function migrate(db: Db): void {
-  if (!hasColumn(db, 'agents', 'avatar_color')) {
-    db.exec(`ALTER TABLE agents ADD COLUMN avatar_color TEXT NOT NULL DEFAULT '#8b5cf6'`);
-  }
-  if (!hasColumn(db, 'agents', 'avatar_shape')) {
-    db.exec(`ALTER TABLE agents ADD COLUMN avatar_shape TEXT NOT NULL DEFAULT 'circle'`);
-  }
-  if (!hasColumn(db, 'agents', 'hidden')) {
-    db.exec(`ALTER TABLE agents ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`);
-  }
-  if (!hasColumn(db, 'agents', 'notify_on_updates')) {
-    db.exec(`ALTER TABLE agents ADD COLUMN notify_on_updates INTEGER NOT NULL DEFAULT 1`);
-  }
-  if (!hasColumn(db, 'messages', 'kind')) {
-    db.exec(`ALTER TABLE messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'text'`);
-  }
-  if (!hasColumn(db, 'messages', 'meta')) {
-    db.exec(`ALTER TABLE messages ADD COLUMN meta TEXT`);
-  }
-  if (!hasColumn(db, 'messages', 'attachments')) {
-    db.exec(`ALTER TABLE messages ADD COLUMN attachments TEXT`);
-  }
-  if (!hasColumn(db, 'messages', 'edited_at')) {
-    db.exec(`ALTER TABLE messages ADD COLUMN edited_at TEXT`);
-  }
-  if (!hasColumn(db, 'memory', 'tier')) {
-    db.exec(`ALTER TABLE memory ADD COLUMN tier TEXT NOT NULL DEFAULT 'note'`);
-  }
-  if (!hasColumn(db, 'memory', 'scope')) {
-    db.exec(`ALTER TABLE memory ADD COLUMN scope TEXT NOT NULL DEFAULT 'agent'`);
-  }
-  if (!hasColumn(db, 'memory', 'project_id')) {
-    db.exec(`ALTER TABLE memory ADD COLUMN project_id TEXT`);
-  }
-  if (!hasColumn(db, 'memory', 'pinned')) {
-    db.exec(`ALTER TABLE memory ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`);
-  }
-  if (!hasColumn(db, 'routines', 'quiet_if_empty')) {
-    db.exec(`ALTER TABLE routines ADD COLUMN quiet_if_empty INTEGER NOT NULL DEFAULT 0`);
-  }
-  if (!hasColumn(db, 'routines', 'webhook_token')) {
-    db.exec(`ALTER TABLE routines ADD COLUMN webhook_token TEXT`);
-  }
-  if (!hasColumn(db, 'tasks', 'parent_task_id')) {
-    db.exec(`ALTER TABLE tasks ADD COLUMN parent_task_id TEXT`);
-  }
-  if (!hasColumn(db, 'tasks', 'post_to_chat')) {
-    db.exec(`ALTER TABLE tasks ADD COLUMN post_to_chat INTEGER NOT NULL DEFAULT 1`);
-  }
-}
-
 export function openDatabase(dataDir: string): Db {
   fs.mkdirSync(dataDir, { recursive: true });
-  const dbPath = path.join(dataDir, 'grok_bot.db');
-  const db = new Database(dbPath);
+  const db = new Database(path.join(dataDir, 'grok_bot.db'));
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
   migrate(db);
-  seedDefaults(db);
   return db;
 }
 
-function seedDefaults(db: Db): void {
-  const now = new Date().toISOString();
-  const existing = db.prepare('SELECT id FROM agents WHERE name = ?').get('dev');
-  if (!existing) {
-    db.prepare(
-      `INSERT INTO agents (id, name, title, description, system_prompt, avatar_color, avatar_shape, hidden, notify_on_updates, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`
-    ).run(
-      uuid(),
-      'dev',
-      'Developer',
-      'Default coding assistant with workspace tools',
-      `You are Grok Bot Local — a helpful local AI coding assistant.
-You have tools for reading/writing files, listing directories, running shell commands (sandboxed to the workspace), fetching web pages, searching the web, browser automation, messaging other agents, and asking the user questions via widgets.
-Use tools when they help answer accurately. Prefer concise, actionable answers.
-When editing code, explain briefly what you changed.`,
-      '#8b5cf6',
-      'circle',
-      now,
-      now
+function migrate(db: Db): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS shares (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS secrets (
+      id TEXT PRIMARY KEY,
+      plugin_slug TEXT,
+      key_name TEXT NOT NULL,
+      value TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
+  const cols = db.prepare(`PRAGMA table_info(agents)`).all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === 'model')) {
+    db.exec(`ALTER TABLE agents ADD COLUMN model TEXT NOT NULL DEFAULT ''`);
   }
-
-  const defaults: Record<string, string> = {
-    ollamaBaseUrl: 'http://127.0.0.1:11434',
-    defaultModel: 'qwen2.5:7b',
-    workspaceRoot: '',
-    theme: 'dark',
-    language: 'en',
-    accentColor: '#8b5cf6',
-    taskConcurrency: '2',
-    githubRepo: 'GregGirault/grok_bot_local',
-  };
-  const upsert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
-  for (const [k, v] of Object.entries(defaults)) {
-    upsert.run(k, v);
+  if (!cols.some((c) => c.name === 'hf_model')) {
+    db.exec(`ALTER TABLE agents ADD COLUMN hf_model TEXT NOT NULL DEFAULT ''`);
   }
-
-  const localMachine = db.prepare('SELECT id FROM machines WHERE name = ?').get('This machine');
-  if (!localMachine) {
-    db.prepare(
-      `INSERT INTO machines (id, name, host, path, created_at) VALUES (?, ?, ?, ?, ?)`
-    ).run(uuid(), 'This machine', 'localhost', '', now);
+  if (!cols.some((c) => c.name === 'model_provider')) {
+    db.exec(`ALTER TABLE agents ADD COLUMN model_provider TEXT NOT NULL DEFAULT 'ollama'`);
   }
 }
+
+export function nowIso(): string {
+  return new Date().toISOString();
+}
+
+export { uuid };

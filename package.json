@@ -1,8 +1,8 @@
 {
   "name": "grok-bot-local",
-  "version": "0.4.0",
+  "version": "0.13.0",
   "private": true,
-  "description": "GPT-6-ASTRA local command deck — Ollama + Hugging Face + tools + memory + routines",
+  "description": "Grok Bot local — chrome officiel + flotte GPT-6-ASTRA 10.",
   "license": "MIT",
   "workspaces": [
     "apps/server",
@@ -10,12 +10,15 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n server,web -c cyan,magenta \"npm run dev -w @grok-bot/server\" \"npm run dev -w @grok-bot/web\"",
+    "dev": "npm run build -w @grok-bot/shared && concurrently -n server,web -c cyan,magenta \"npm run dev -w @grok-bot/server\" \"npm run dev -w @grok-bot/web\"",
     "build": "npm run build -w @grok-bot/shared && npm run build -w @grok-bot/server && npm run build -w @grok-bot/web",
     "start": "npm run start -w @grok-bot/server",
-    "typecheck": "npm run typecheck -w @grok-bot/shared && npm run typecheck -w @grok-bot/server && npm run typecheck -w @grok-bot/web",
+    "typecheck": "npm run build -w @grok-bot/shared && npm run typecheck -w @grok-bot/shared && npm run typecheck -w @grok-bot/server && npm run typecheck -w @grok-bot/web",
+    "test:seed": "npm run build -w @grok-bot/shared && npx tsx apps/server/src/db/seed.test.ts",
     "dev:desktop": "npm --prefix apps/desktop install && npm --prefix apps/desktop run dev",
-    "start:desktop": "GROK_BOT_DESKTOP_PROD=1 npm --prefix apps/desktop start"
+    "start:desktop": "GROK_BOT_DESKTOP_PROD=1 npm --prefix apps/desktop start",
+    "probe-pc": "node ./scripts/probe-pc.mjs",
+    "sync-models": "node ./scripts/sync-models.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

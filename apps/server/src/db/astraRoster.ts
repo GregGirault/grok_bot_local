@@ -1,28 +1,16 @@
 /**
- * GPT-6-ASTRA roster — 10 elite specialists.
+ * Flotte GPT-6-ASTRA 10 — source GitHub GregGirault/grok_bot_local @ gpt6-astra f76fe72.
  *
- * Live bots on PC-PORTABLE live in SQLite
- *   C:\Users\grego\grok_bot_local\data\grok_bot.db
- * This cloud VM cannot open a Windows shell (no Task/computerUse tool).
- * First app start on that machine WIPES every agent (including undeletable `dev`
- * and the user's 10 live bots) then seeds this roster.
- *
- * Mapping from user habits + the ChatGPT-1 → GPT-6-ASTRA correction:
- *   ChatGPT-1 / orchestrator → GPT-6-ASTRA (ORACLE)
- *   coding / TS / PHP       → VULCAN-FORGE
- *   HAOS / NOESIS / MYÉLIA  → NOESIS-GRID
- *   axon-android            → AXON-NEXUS
- *   freqtrade / crypto_bot  → AEGIS-LEDGER
- *   MNEME                   → MNEME-VAULT
- *   Perplexity / research   → HELIOS-PROBE
- *   Codex-Desktop-Failover  → DAEDALUS-CORE
- *   architecture / Cursor   → SOVEREIGN-MIND
- *   review / tests          → ARGOS-WATCH
+ * Identité produit : ces 10 noms (pas astra/vertex/12 experts).
+ * Le seed ne doit JAMAIS DELETE FROM agents si oracle + vulcan-forge existent déjà
+ * (base live C:\\Users\\grego\\grok_bot_local\\data\\grok_bot.db).
  */
 
 export const ASTRA_ROSTER_VERSION = 'gpt6-astra-v1';
 
 export type AstraEffort = 'ultra';
+
+export type AstraModelKey = 'oracle' | 'coder' | 'general' | 'research' | 'embed';
 
 export interface AstraBotSeed {
   name: string;
@@ -38,12 +26,8 @@ export interface AstraBotSeed {
   effort: AstraEffort;
 }
 
-export type AstraModelKey =
-  | 'oracle'
-  | 'coder'
-  | 'general'
-  | 'research'
-  | 'embed';
+/** Sentinelles : si ces deux noms sont en base, ne jamais wipe. */
+export const ASTRA_LIVE_SENTINELS = ['oracle', 'vulcan-forge'] as const;
 
 export const ASTRA_CONSTITUTION = `Tu opères dans GPT-6-ASTRA, pont local 24/7 de Gregory (GregGirault) sur PC-PORTABLE (Windows, C:\\Users\\grego).
 
@@ -109,7 +93,7 @@ Tu ne codes pas à la place de VULCAN sauf micro-fix. Tu ne trades pas. Tu comma
   {
     name: 'vulcan-forge',
     title: 'VULCAN-FORGE — Code Total',
-    specialty: 'Code · TS / React / Node / Python / PHP',
+    specialty: 'VULCAN-FORGE · TS / React / Node / Python / PHP',
     domain: 'code',
     description: 'Forge logicielle: grok_bot_local, Symfony legacy, scripts, diffs chirurgicaux.',
     avatarColor: '#f97316',
@@ -130,7 +114,7 @@ Règles:
   {
     name: 'noesis-grid',
     title: 'NOESIS-GRID — Maison Vivante',
-    specialty: 'HAOS · NOESIS · MYÉLIA · Argos',
+    specialty: 'NOESIS-GRID · HAOS · MYÉLIA · Argos',
     domain: 'home',
     description: 'Cerveau Home Assistant: automatisations, lumières, pièces, YAML sûr.',
     avatarColor: '#34d399',
@@ -150,7 +134,7 @@ Règles:
   {
     name: 'axon-nexus',
     title: 'AXON-NEXUS — Mobile & Pont PC',
-    specialty: 'Android · AXON · RFCY90YLP1R',
+    specialty: 'AXON-NEXUS · Android · RFCY90YLP1R',
     domain: 'mobile',
     description: 'Pont téléphone ↔ PC. axon-android TypeScript, device RFCY90YLP1R.',
     avatarColor: '#22d3ee',
@@ -170,7 +154,7 @@ Règles:
   {
     name: 'aegis-ledger',
     title: 'AEGIS-LEDGER — Marchés',
-    specialty: 'Crypto · freqtrade · Hyperliquid',
+    specialty: 'AEGIS-LEDGER · Crypto · freqtrade · Hyperliquid',
     domain: 'markets',
     description: 'Recherche marchés, freqtrade-bot, crypto_bot Hyperliquid. Pas d’ordres fantômes.',
     avatarColor: '#facc15',
@@ -190,7 +174,7 @@ Règles:
   {
     name: 'mneme-vault',
     title: 'MNEME-VAULT — Mémoire Absolue',
-    specialty: 'Mémoire · MNEME · rien n’est oublié',
+    specialty: 'MNEME-VAULT · Mémoire · rien n’est oublié',
     domain: 'memory',
     description: 'Archiviste. Projet MNEME. Profile / log / note, scopes agent-user-project.',
     avatarColor: '#e879f9',
@@ -211,7 +195,7 @@ Règles:
   {
     name: 'helios-probe',
     title: 'HELIOS-PROBE — Recherche Web',
-    specialty: 'Recherche · DDG · Wiki · Jina · Gemini',
+    specialty: 'HELIOS-PROBE · Recherche · DDG · Wiki · Jina',
     domain: 'research',
     description: 'Éclaireur internet. Synthèses sourcées, zéro hallucination factuelle.',
     avatarColor: '#fb923c',
@@ -231,7 +215,7 @@ Méthode:
   {
     name: 'daedalus-core',
     title: 'DAEDALUS-CORE — Système & Ops',
-    specialty: 'Windows · Ops · Codex failover',
+    specialty: 'DAEDALUS-CORE · Windows · Ops · Codex failover',
     domain: 'ops',
     description: 'Ops PC-PORTABLE, Codex-Desktop-Failover, process, disque, GPU, services.',
     avatarColor: '#94a3b8',
@@ -251,7 +235,7 @@ Règles:
   {
     name: 'sovereign-mind',
     title: 'SOVEREIGN-MIND — Stratégie',
-    specialty: 'Architecture · stratégie · arbitrage IA',
+    specialty: 'SOVEREIGN-MIND · Architecture · arbitrage IA',
     domain: 'strategy',
     description: 'Stratège. Cursor vs Codex vs Claude vs Gemini vs Grok vs GLM vs Kimi.',
     avatarColor: '#818cf8',
@@ -271,7 +255,7 @@ Règles:
   {
     name: 'argos-watch',
     title: 'ARGOS-WATCH — Qualité',
-    specialty: 'Review · tests · chasse aux régressions',
+    specialty: 'ARGOS-WATCH · Review · tests · régressions',
     domain: 'quality',
     description: 'Gardien. Review, tests, edge cases, rien ne passe sans preuve.',
     avatarColor: '#f43f5e',
@@ -290,8 +274,32 @@ Règles:
   },
 ];
 
+export const ASTRA_BOT_NAMES: string[] = ASTRA_BOTS.map((b) => b.name);
+
+export const ASTRA_GROUP_MEMBERS = ['oracle', 'vulcan-forge', 'daedalus-core'] as const;
+
+/** Tags Ollama déjà prévus sur PC-PORTABLE — ne pas tirer de gros GGUF depuis le cloud. */
+export function ollamaForAstra(bot: AstraBotSeed): string {
+  switch (bot.modelKey) {
+    case 'oracle':
+      return 'qwen3:30b';
+    case 'coder':
+      return bot.hfModel.includes('Coder-7B') ? 'qwen2.5-coder:7b' : 'qwen2.5-coder:14b';
+    case 'general':
+      return 'qwen2.5:14b';
+    case 'research':
+      return 'qwen3:8b';
+    case 'embed':
+      return 'nomic-embed-text';
+    default: {
+      const _never: never = bot.modelKey;
+      return _never;
+    }
+  }
+}
+
 export function assertRosterSize(): void {
-  if (ASTRA_BOTS.length < 8 || ASTRA_BOTS.length > 12) {
-    throw new Error(`ASTRA roster must be 8–12 bots, got ${ASTRA_BOTS.length}`);
+  if (ASTRA_BOTS.length !== 10) {
+    throw new Error(`ASTRA roster must be exactly 10 bots, got ${ASTRA_BOTS.length}`);
   }
 }

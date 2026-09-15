@@ -1,11 +1,11 @@
 /**
- * MCP config loader + minimal live stdio JSON-RPC transport.
- * Spawns configured command servers and calls tools/list + tools/call.
+ * MCP config + transport stdio JSON-RPC (issu de gpt6-astra).
+ * Chrome Grok : listage / édition via Réglages → Plugins, outils mcp_list / mcp_call.
  */
 import fs from 'fs';
 import path from 'path';
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
-import type { ToolDef } from './ollama';
+import type { ToolDef } from './llm';
 
 export interface McpServerEntry {
   name: string;
@@ -50,8 +50,7 @@ class StdioMcpClient {
   private pending = new Map<number, Pending>();
   private buffer = '';
   private ready: Promise<void> | null = null;
-  liveTools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }> =
-    [];
+  liveTools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }> = [];
 
   constructor(
     private entry: McpServerEntry,
@@ -60,13 +59,11 @@ class StdioMcpClient {
   ) {}
 
   async start(): Promise<void> {
-    if (!this.entry.command) throw new Error(`MCP server ${this.entry.name} has no command`);
+    if (!this.entry.command) throw new Error(`MCP ${this.entry.name} : pas de command`);
     if (this.ready) return this.ready;
     this.ready = new Promise((resolve, reject) => {
       try {
-        const args = (this.entry.args ?? []).map((a) =>
-          path.isAbsolute(a) ? a : path.resolve(this.projectRoot, a)
-        );
+        const args = (this.entry.args ?? []).map((a) => (path.isAbsolute(a) ? a : path.resolve(this.projectRoot, a)));
         this.proc = spawn(this.entry.command!, args, {
           cwd: this.projectRoot,
           env: { ...process.env, ...(this.entry.env || {}) },
@@ -83,20 +80,15 @@ class StdioMcpClient {
           this.proc = null;
           this.ready = null;
         });
-        // Initialize then list tools
         void this.request('initialize', {
           protocolVersion: '2024-11-05',
           capabilities: {},
-          clientInfo: { name: 'grok-bot-local', version: '0.3.0' },
+          clientInfo: { name: 'grok-bot-local', version: '0.13.0' },
         })
           .then(async () => {
             this.notify('notifications/initialized', {});
             const listed = (await this.request('tools/list', {})) as {
-              tools?: Array<{
-                name: string;
-                description?: string;
-                inputSchema?: Record<string, unknown>;
-              }>;
+              tools?: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>;
             };
             this.liveTools = listed?.tools ?? [];
             resolve();
@@ -111,7 +103,6 @@ class StdioMcpClient {
 
   private onData(text: string): void {
     this.buffer += text;
-    // Content-Length framed or newline JSON
     while (true) {
       if (this.buffer.startsWith('Content-Length:')) {
         const headerEnd = this.buffer.indexOf('\r\n\r\n');
@@ -140,11 +131,7 @@ class StdioMcpClient {
 
   private handleMessage(raw: string): void {
     try {
-      const msg = JSON.parse(raw) as {
-        id?: number;
-        result?: unknown;
-        error?: { message?: string };
-      };
+      const msg = JSON.parse(raw) as { id?: number; result?: unknown; error?: { message?: string } };
       if (msg.id !== undefined && this.pending.has(msg.id)) {
         const p = this.pending.get(msg.id)!;
         this.pending.delete(msg.id);
@@ -152,7 +139,7 @@ class StdioMcpClient {
         else p.resolve(msg.result);
       }
     } catch {
-      // ignore
+      /* ignore partial frames */
     }
   }
 
@@ -198,6 +185,10 @@ class StdioMcpClient {
 const clients = new Map<string, StdioMcpClient>();
 let mcpProjectRoot = '';
 
+function qualify(server: string, tool: string): string {
+  return `mcp_${server}_${tool}`.replace(/[^a-zA-Z0-9_]/g, '_');
+}
+
 export function loadMcpConfig(projectRoot: string): LoadedMcp {
   mcpProjectRoot = projectRoot;
   const configPath = path.join(projectRoot, 'config', 'mcp.json');
@@ -207,11 +198,11 @@ export function loadMcpConfig(projectRoot: string): LoadedMcp {
   try {
     raw = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as McpConfig;
   } catch (e) {
-    console.warn('[mcp] failed to parse config/mcp.json:', e);
+    console.warn('[mcp] config/mcp.json illisible:', e);
     return { ...EMPTY, configPath };
   }
 
-  const allServers = raw.servers ?? [];
+  const allServers = Array.isArray(raw.servers) ? raw.servers : [];
   const servers = allServers.filter((s) => s && s.name && !s.disabled);
   const toolDefs: ToolDef[] = [];
   const serverNames: string[] = [];
@@ -220,47 +211,30 @@ export function loadMcpConfig(projectRoot: string): LoadedMcp {
     serverNames.push(server.name);
     const listed = server.tools?.length
       ? server.tools
-      : [
-          {
-            name: 'ping',
-            description: `Ping for MCP server "${server.name}"`,
-          },
-        ];
-
+      : [{ name: 'ping', description: `Ping MCP « ${server.name} »` }];
     for (const t of listed) {
-      const fullName = `mcp_${server.name}_${t.name}`.replace(/[^a-zA-Z0-9_]/g, '_');
+      const fullName = qualify(server.name, t.name);
       toolDefs.push({
         type: 'function',
         function: {
           name: fullName,
-          description:
-            t.description || `MCP tool ${t.name} from server "${server.name}"`,
-          parameters: (t.parameters as ToolDef['function']['parameters']) || {
-            type: 'object',
-            properties: {},
-            required: [],
-          },
+          description: t.description || `MCP ${t.name} (${server.name})`,
+          parameters: t.parameters || { type: 'object', properties: {}, required: [] },
         },
       });
     }
-
-    // Eager-start stdio servers when command is set (best-effort)
     if (server.command) {
       void ensureClient(server)
         .then((client) => {
           for (const t of client.liveTools) {
-            const fullName = `mcp_${server.name}_${t.name}`.replace(/[^a-zA-Z0-9_]/g, '_');
+            const fullName = qualify(server.name, t.name);
             if (!toolDefs.find((d) => d.function.name === fullName)) {
               toolDefs.push({
                 type: 'function',
                 function: {
                   name: fullName,
                   description: t.description || `MCP ${t.name}`,
-                  parameters: (t.inputSchema as ToolDef['function']['parameters']) || {
-                    type: 'object',
-                    properties: {},
-                    required: [],
-                  },
+                  parameters: t.inputSchema || { type: 'object', properties: {}, required: [] },
                 },
               });
             }
@@ -268,10 +242,6 @@ export function loadMcpConfig(projectRoot: string): LoadedMcp {
         })
         .catch((e) => console.warn(`[mcp] start ${server.name} failed:`, e));
     }
-  }
-
-  if (serverNames.length) {
-    console.log(`[mcp] loaded ${serverNames.length} server(s): ${serverNames.join(', ')}`);
   }
 
   return { config: { servers: allServers }, toolDefs, serverNames, configPath };
@@ -287,22 +257,12 @@ async function ensureClient(entry: McpServerEntry): Promise<StdioMcpClient> {
   return c;
 }
 
-export async function executeMcpTool(
-  toolName: string,
-  argsJson: string,
-  loaded: LoadedMcp
-): Promise<string> {
-  const def = loaded.toolDefs.find((t) => t.function.name === toolName);
-  if (!def) {
-    return JSON.stringify({ error: `Unknown MCP tool: ${toolName}` });
-  }
-
-  // Parse mcp_<server>_<tool>
+export async function executeMcpTool(toolName: string, argsJson: string, loaded: LoadedMcp): Promise<string> {
   const without = toolName.replace(/^mcp_/, '');
   let server: McpServerEntry | undefined;
   let shortTool = without;
   for (const s of loaded.config.servers) {
-    const prefix = s.name.replace(/[^a-zA-Z0-9_]/g, '_') + '_';
+    const prefix = `${s.name.replace(/[^a-zA-Z0-9_]/g, '_')}_`;
     if (without.startsWith(prefix)) {
       server = s;
       shortTool = without.slice(prefix.length);
@@ -328,13 +288,12 @@ export async function executeMcpTool(
         live: false,
         tool: toolName,
         error: e instanceof Error ? e.message : String(e),
-        message: 'stdio MCP call failed — falling back to stub response',
+        message: 'Appel stdio MCP en échec.',
         args,
       });
     }
   }
 
-  // Built-in echo fallback for demo / url-only servers
   if (shortTool === 'echo' || shortTool === 'ping') {
     return JSON.stringify({
       ok: true,
@@ -342,7 +301,7 @@ export async function executeMcpTool(
       localEcho: true,
       tool: toolName,
       echo: args,
-      message: `Echo from MCP stub server "${server?.name || 'unknown'}"`,
+      message: `Echo stub MCP « ${server?.name || 'unknown'} »`,
     });
   }
 
@@ -351,30 +310,51 @@ export async function executeMcpTool(
     stub: true,
     tool: toolName,
     args,
-    message:
-      'MCP tool registered but no stdio command configured. Set command/args in config/mcp.json.',
+    message: 'Aucun command stdio dans config/mcp.json pour cet outil.',
     servers: loaded.serverNames,
   });
 }
 
-/** @deprecated alias */
-export const executeMcpStub = executeMcpTool;
-
-export function saveMcpConfig(projectRoot: string, config: McpConfig): void {
+export function saveMcpConfig(projectRoot: string, config: McpConfig): McpConfig {
+  const servers = Array.isArray(config.servers) ? config.servers : [];
+  for (const s of servers) {
+    if (!s || typeof s.name !== 'string' || !s.name.trim()) {
+      throw new Error('Chaque serveur MCP doit avoir un name.');
+    }
+  }
   const configPath = path.join(projectRoot, 'config', 'mcp.json');
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
-  // Restart clients for changed servers
+  const next: McpConfig = { servers };
+  fs.writeFileSync(configPath, JSON.stringify(next, null, 2), 'utf-8');
   for (const c of clients.values()) c.stop();
   clients.clear();
+  return next;
 }
 
 export function getMcpConfigRaw(projectRoot: string): McpConfig {
   const configPath = path.join(projectRoot, 'config', 'mcp.json');
   if (!fs.existsSync(configPath)) return { servers: [] };
   try {
-    return JSON.parse(fs.readFileSync(configPath, 'utf-8')) as McpConfig;
+    const parsed = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as McpConfig;
+    return { servers: Array.isArray(parsed.servers) ? parsed.servers : [] };
   } catch {
     return { servers: [] };
   }
+}
+
+export function summarizeMcp(projectRoot: string): {
+  servers: Array<{ name: string; command?: string; url?: string; disabled?: boolean; tools: string[] }>;
+  configPath: string;
+} {
+  const loaded = loadMcpConfig(projectRoot);
+  return {
+    configPath: loaded.configPath,
+    servers: loaded.config.servers.map((s) => ({
+      name: s.name,
+      command: s.command,
+      url: s.url,
+      disabled: Boolean(s.disabled),
+      tools: (s.tools ?? []).map((t) => t.name),
+    })),
+  };
 }

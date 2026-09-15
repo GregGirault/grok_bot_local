@@ -1,8 +1,8 @@
 {
   "name": "grok-bot-local",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
-  "description": "Local free Grok Bot clone MVP — Ollama + tools + memory + routines",
+  "description": "GPT-6-ASTRA local command deck — Ollama + Hugging Face + tools + memory + routines",
   "license": "MIT",
   "workspaces": [
     "apps/server",

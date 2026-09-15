@@ -1,8 +1,7 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage } = require('electron');
-const path = require('path');
 
 const isDev = !app.isPackaged && process.env.GROK_BOT_DESKTOP_PROD !== '1';
-const DEV_URL = process.env.GROK_BOT_DEV_URL || 'http://127.0.0.1:5173';
+const DEV_URL = process.env.GROK_BOT_DEV_URL || 'http://127.0.0.1:43123';
 const PROD_URL = process.env.GROK_BOT_PROD_URL || 'http://127.0.0.1:8787';
 
 let mainWindow = null;
@@ -14,7 +13,7 @@ function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    title: 'Grok Bot Local',
+    title: 'GPT-6-ASTRA',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -25,7 +24,7 @@ function createWindow() {
   mainWindow.loadURL(url).catch((err) => {
     console.error('Failed to load', url, err);
     mainWindow.loadURL(
-      'data:text/html,<h1>Grok Bot Local</h1><p>Start the server first: <code>npm run dev</code></p>'
+      'data:text/html,<h1>GPT-6-ASTRA</h1><p>Start the server first: <code>npm run dev</code></p>'
     );
   });
 
@@ -38,7 +37,7 @@ function createTray() {
   try {
     const img = nativeImage.createEmpty();
     tray = new Tray(img);
-    tray.setToolTip('Grok Bot Local');
+    tray.setToolTip('GPT-6-ASTRA');
     tray.setContextMenu(
       Menu.buildFromTemplate([
         {

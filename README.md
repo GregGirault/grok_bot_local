@@ -1,142 +1,88 @@
-# Grok Bot Local
+# GPT-6-ASTRA — Grok Bot Local 0.4.0
 
-Local-first Grok Bot–like assistant — Ollama + tools + memory + routines + Electron desktop.
+Pont local 24/7 (Ollama + Hugging Face + outils + mémoire) pour Gregory / GregGirault.
 
-**Stack:** Node 20 · TypeScript · npm workspaces · Fastify · better-sqlite3 · Vite · React · Tailwind · Electron (optional)
+UI: **http://127.0.0.1:43123**  
+API: **http://127.0.0.1:8787** (`/health`)
 
-See **[docs/PARITY.md](docs/PARITY.md)** for the full feature map (v0.3.0).
-
----
-
-## English — Install & run
-
-### Prerequisites
-
-- Node.js **20+**
-- [Ollama](https://ollama.com) running locally (`http://127.0.0.1:11434`)
-- A model pulled, e.g. `ollama pull qwen2.5:7b`
-- Build tools for native modules (`better-sqlite3`): on Debian/Ubuntu `build-essential python3`
-
-### Install
-
-```bash
-cd grok_bot_local
-npm install
-```
-
-### Develop (API + UI)
-
-```bash
-npm run dev
-```
-
-- Web UI: http://127.0.0.1:5173  
-- API: http://127.0.0.1:8787  
-- Health: http://127.0.0.1:8787/health  
-
-### Electron desktop
-
-With `npm run dev` already running:
-
-```bash
-npm run dev:desktop
-```
-
-Loads http://127.0.0.1:5173 in development. Production: point at http://127.0.0.1:8787 (`GROK_BOT_DESKTOP_PROD=1`).
-
-### Build & production start
-
-```bash
-npm run build
-npm run start
-```
-
-Electron is optional (`apps/desktop`); core build is shared/server/web.
-
-### Configuration
-
-Settings live in SQLite (`data/grok_bot.db`) and the **Settings** UI:
-
-| Key | Default |
-|-----|---------|
-| `ollamaBaseUrl` | `http://127.0.0.1:11434` |
-| `defaultModel` | `qwen2.5:7b` |
-| `workspaceRoot` | `<repo>/workspace` |
-| `taskConcurrency` | `2` |
-| `theme` / `language` / `accentColor` | dark / en / `#8b5cf6` |
-
-### Highlights (v0.3)
-
-- **Attachments** — upload images/files in chat (`data/uploads`)
-- **Projects** — sidebar Projects page + project-scoped memory
-- **Webhooks** — `POST /api/hooks/:routineId` or `/api/hooks/token/:token`
-- **MCP stdio** — live JSON-RPC client; example `scripts/mcp-echo-server.mjs`
-- **Electron** — `apps/desktop` tray-capable wrapper
-- **Approvals** — dangerous shell commands require Approve/Deny
-- **Themes** — light / dark / system + global accent
-
-### Playwright (optional)
-
-```bash
-npm i -w @grok-bot/server playwright
-npx playwright install chromium
-```
-
-Browser tools (`browser_navigate`, `browser_snapshot`, `screenshot`) show a clear install hint if Playwright is missing.
-
-### Push to GitHub
-
-```bash
-git remote add origin https://github.com/GregGirault/grok_bot_local.git   # if not set
-git push -u origin main
-```
-
----
-
-## Français — Installation & lancement
-
-### Prérequis
-
-- Node.js **20+**
-- [Ollama](https://ollama.com) en local
-- Un modèle, ex. `ollama pull qwen2.5:7b`
-
-### Développement
+## Lancer
 
 ```bash
 npm install
 npm run dev
 ```
 
-- Interface : http://127.0.0.1:5173  
-- API : http://127.0.0.1:8787  
-
-### Electron
+Ollama doit tourner (`http://127.0.0.1:11434`). Au démarrage l’app profile CPU/RAM/GPU, liste les modèles Ollama, scanne le cache Hugging Face, et **auto-pull** les modèles recommandés **sur la machine qui exécute le process**.
 
 ```bash
-npm run dev:desktop
+# Optionnel
+export GEMINI_API_KEY=...          # ou ANTIGRAVITY_API_KEY — fallback recherche
+export GROK_BOT_ROOT=C:\Users\grego\grok_bot_local
 ```
 
-### Webhooks
+Sur **PC-PORTABLE** (Windows, `C:\Users\grego`):
 
-```bash
-curl -X POST http://127.0.0.1:8787/api/hooks/<routineId>
+```powershell
+cd C:\Users\grego\grok_bot_local
+git fetch origin
+git checkout gpt6-astra
+# ou: git pull origin gpt6-astra
+npm install
+npm run dev
 ```
 
-### Projets & pièces jointes
+**Avant le premier lancement ASTRA** (pour photographier tes 10 bots live) :
 
-- Page **Projects** dans la barre latérale  
-- Bouton 📎 dans le chat pour joindre des fichiers  
+```powershell
+node scripts/inspect_live_bots.mjs C:\Users\grego\grok_bot_local\data\grok_bot.db
+```
 
----
+Le premier `npm run dev` **sauvegarde** les agents existants dans `data/backups/pre-astra-agents-*.json`, **EFFACE tous les agents SQLite** (y compris l’ancien `dev` et les 10 bots live) puis sème les 10 spécialistes ASTRA.
 
-## Features
+## Les 10 bots live n’étaient PAS dans git
 
-- Agents CRUD · streaming chat (SSE) · markdown · widgets · tool cards
-- Tools: shell, files, web, browser, screenshot, copy_to/from_workspace, spawn_task, memory, MCP
-- Memory tiers + user/project scopes · skills editor · cron routines + webhooks
-- Background task pool · auto-review approvals · machines CRUD · Electron
+Source de vérité des 10 bots existants: SQLite sur le laptop
 
-## License
+`C:\Users\grego\grok_bot_local\data\grok_bot.db`
 
-MIT
+Ce cloud agent n’a **pas** ouvert un shell Windows sur le worker PC-PORTABLE (`05d18a92-26fe-4043-9b4b-e498c253457b`, eligibleForSubagent) — pas d’outil Task/computerUse ici. Les 10 bots n’ont donc **pas** été inspectés ligne à ligne. Le seed ASTRA **remplace** ce qu’il y a dans la DB au premier `openDatabase` (version `gpt6-astra-v1`).
+
+Aucun `ollama pull` n’a été exécuté **sur PC-PORTABLE** depuis ce VM. Les pulls ont lieu uniquement là où tu lances `npm run dev`.
+
+## Roster GPT-6-ASTRA
+
+| Visible | Domaine | Modèle visé |
+|---------|---------|-------------|
+| GPT-6-ASTRA — Commandement · ORACLE · Orchestration 24/7 | command | qwen2.5:14b / 7b |
+| VULCAN-FORGE — Code Total | code | qwen2.5-coder:14b / 7b |
+| NOESIS-GRID — Maison Vivante | HAOS | qwen2.5:7b |
+| AXON-NEXUS — Mobile & Pont PC | axon-android RFCY90YLP1R | qwen2.5:7b (14B AXON-intent) |
+| AEGIS-LEDGER — Marchés | freqtrade / Hyperliquid | qwen2.5:7b |
+| MNEME-VAULT — Mémoire Absolue | MNEME | qwen2.5:7b + nomic-embed-text |
+| HELIOS-PROBE — Recherche Web | DDG + Wiki + Jina + Gemini | qwen2.5:14b / 7b |
+| DAEDALUS-CORE — Système & Ops | Windows / Codex failover | qwen2.5:7b |
+| SOVEREIGN-MIND — Stratégie | architecture / arbitrage IA | qwen2.5:14b / 7b |
+| ARGOS-WATCH — Qualité | review / tests | qwen2.5-coder:7b |
+
+Hardware conservateur: **7B confirmé**, **14B si VRAM ≥ 12 Go** (ou RAM ≥ 32 Go CPU offload). **Pas de 32B/70B** tant que `nvidia-smi` ne prouve pas la VRAM.
+
+Hugging Face: `ollama pull hf.co/{org}/{model}` + import GGUF depuis `~/.cache/huggingface` et `C:\Users\grego\.cache\huggingface`.
+
+## Internet
+
+Chaque bot a `web_search` (DuckDuckGo Instant + HTML + Wikipedia + Jina) et `web_fetch` (Jina puis HTML). Si les hits sont maigres et `GEMINI_API_KEY` / `ANTIGRAVITY_API_KEY` est défini → fallback Gemini. Pas de jailbreak criminel ; travail technique légitime débloqué.
+
+## Ports
+
+Historique grok_bot: 5173 UI / 8787 API. Ici: **43123** UI (évite 3000/5173/8080) et **8787** API.
+
+## Structure
+
+```
+apps/server   Fastify + SQLite + Ollama
+apps/web      Vite React 43123
+apps/desktop  Electron (pointe 43123 en dev)
+packages/shared
+skills/       markdown skills
+data/         grok_bot.db (gitignored)
+```

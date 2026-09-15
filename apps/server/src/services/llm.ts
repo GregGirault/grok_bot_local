@@ -175,7 +175,7 @@ async function* streamOpenAiChat(opts: {
 }
 
 function lastUser(messages: ChatMessageParam[]): string {
-    for (let i = messages.length - 1; i >= 0; i--) {
+  for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === 'user') return messages[i].content;
   }
   return '';

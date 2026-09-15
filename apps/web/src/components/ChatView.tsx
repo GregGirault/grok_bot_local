@@ -1,32 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { displayName } from '@grok-bot/shared';
 import type {
-  ActivityMeta,
   Agent,
   AttachmentInfo,
   Channel,
   ChatMessage,
   ComputerState,
-  EmailMeta,
-  FileCardMeta,
-  LinkMeta,
   Notice,
   Routine,
-  SecretMeta,
   ToolCardMeta,
   WidgetMeta,
   ApprovalRequest,
 } from '@grok-bot/shared';
 import { api, streamChat, streamWidgetSelect, streamRegenerate } from '../lib/api';
-import { t, type Lang, formatTime } from '../lib/i18n';
+import { t, type Lang } from '../lib/i18n';
 import BotAvatar from './BotAvatar';
 import DetailsPane from './DetailsPane';
 import ProfileEditor from './ProfileEditor';
-import { ComputerIcon, BackIcon, MicIcon, CameraIcon, MoreIcon, ShareIcon } from './Icons';
-
-type UiMsg = ChatMessage & { streaming?: boolean; open?: boolean };
+import { ChatHeader } from './ChatHeader';
+import { ChatComposer } from './ChatComposer';
+import { TakeoverOverlay, Transcript, type UiMsg } from './ChatViewChrome';
 
 export default function ChatView({
   agent,
@@ -318,116 +311,24 @@ export default function ChatView({
   return (
     <div className="h-full flex min-w-0 relative">
       <div className="flex-1 min-w-0 flex flex-col">
-        <header
-          className="shrink-0 h-12 px-2 flex items-center justify-between gb-safe-top"
-          style={{ background: 'var(--gb-bg)' }}
-        >
-          <div className="flex items-center gap-0.5 min-w-0">
-            {onBack && (
-              <button
-                type="button"
-                className="h-9 w-9 rounded-lg flex items-center justify-center hover:bg-zinc-800 shrink-0"
-                onClick={onBack}
-                aria-label={t(lang, 'back')}
-              >
-                <BackIcon />
-              </button>
-            )}
-            <button
-              type="button"
-              className="flex items-center gap-2.5 min-w-0 rounded-lg px-1.5 py-1 hover:bg-zinc-800/60 text-left relative"
-              onClick={() => setProfileOpen((v) => !v)}
-              onMouseEnter={() => setHoverAction(true)}
-              onMouseLeave={() => setHoverAction(false)}
-            >
-              <BotAvatar agent={agent} size={28} presence={busy ? 'working' : agent.presence} />
-              <div className="min-w-0">
-                <div className="text-[14px] font-semibold truncate">{first}</div>
-                {phone && action ? (
-                  <div className="text-[11px] truncate" style={{ color: 'var(--gb-muted)' }}>
-                    {t(lang, 'currentAction')} {action}
-                  </div>
-                ) : null}
-              </div>
-              {!phone && hoverAction && action && (
-                <div className="absolute left-10 top-9 z-20 rounded-lg border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-[11px] shadow-xl whitespace-nowrap">
-                  {t(lang, 'currentAction')} {action}
-                </div>
-              )}
-            </button>
-          </div>
-          <div className="flex items-center gap-0.5 relative">
-            <button
-              type="button"
-              title={t(lang, 'computer')}
-              onClick={() => setPaneOpen((v) => !v)}
-              className="h-9 w-9 rounded-lg flex items-center justify-center hover:bg-zinc-800"
-              style={{ color: computerActive ? '#8b5cf6' : 'var(--gb-muted)' }}
-            >
-              <ComputerIcon active={computerActive} />
-            </button>
-            <button
-              type="button"
-              className="h-9 w-9 rounded-full flex items-center justify-center hover:bg-zinc-800"
-              style={{ color: 'var(--gb-muted)' }}
-              onClick={() => {
-                void api.shareAgent(agent.id).then((r) => void navigator.clipboard.writeText(`${window.location.origin}${r.url}`));
-              }}
-              aria-label={t(lang, 'shareBot')}
-            >
-              <ShareIcon />
-            </button>
-            <button
-              type="button"
-              className="h-9 w-9 rounded-full flex items-center justify-center hover:bg-zinc-800"
-              style={{ color: 'var(--gb-muted)' }}
-              onClick={() => setHeaderMenu((v) => !v)}
-              aria-label={t(lang, 'editProfile')}
-            >
-              <MoreIcon />
-            </button>
-            {headerMenu && (
-              <div className="absolute right-0 top-10 z-30 min-w-[200px] rounded-xl border border-zinc-800 bg-zinc-950 shadow-xl py-1 text-[13px]">
-                <button type="button" className="w-full text-left px-3 py-2 hover:bg-zinc-900" onClick={() => { setHeaderMenu(false); setProfileOpen(true); }}>
-                  {t(lang, 'editProfile')}
-                </button>
-                <button type="button" className="w-full text-left px-3 py-2 hover:bg-zinc-900" onClick={() => { setHeaderMenu(false); setPaneOpen(true); }}>
-                  {t(lang, 'conversationDetails')}
-                </button>
-                <button
-                  type="button"
-                  className="w-full text-left px-3 py-2 hover:bg-zinc-900"
-                  onClick={() => {
-                    setHeaderMenu(false);
-                    void api.pinAgent(agent.id, !agent.pinned).then(onAgentsChange);
-                  }}
-                >
-                  {agent.pinned ? t(lang, 'unpin') : t(lang, 'pin')}
-                </button>
-                <button
-                  type="button"
-                  className="w-full text-left px-3 py-2 hover:bg-zinc-900"
-                  onClick={() => {
-                    setHeaderMenu(false);
-                    void api.hideAgent(agent.id, true).then(onAgentsChange);
-                  }}
-                >
-                  {t(lang, 'hide')}
-                </button>
-                <button
-                  type="button"
-                  className="w-full text-left px-3 py-2 hover:bg-zinc-900 text-red-400"
-                  onClick={() => {
-                    setHeaderMenu(false);
-                    onDelete?.(agent);
-                  }}
-                >
-                  {t(lang, 'delete')}
-                </button>
-              </div>
-            )}
-          </div>
-        </header>
+        <ChatHeader
+          agent={agent}
+          lang={lang}
+          phone={Boolean(phone)}
+          first={first}
+          action={action}
+          busy={busy}
+          computerActive={computerActive}
+          headerMenu={headerMenu}
+          hoverAction={hoverAction}
+          onBack={onBack}
+          onDelete={onDelete}
+          onAgentsChange={onAgentsChange}
+          setProfileOpen={setProfileOpen}
+          setPaneOpen={setPaneOpen}
+          setHeaderMenu={setHeaderMenu}
+          setHoverAction={setHoverAction}
+        />
 
         {profileOpen && (
           <ProfileEditor
@@ -454,3 +355,171 @@ export default function ChatView({
               </button>
             </div>
             {notices.map((n) => (
+              <div key={n.id} className="flex items-start gap-2 text-[12px]">
+                <span className="flex-1">
+                  <span className="font-medium">{n.title}</span> — {n.body}
+                  {n.requestId && (
+                    <button
+                      type="button"
+                      className="ml-2 text-[10px] underline"
+                      onClick={() => void navigator.clipboard.writeText(n.requestId || '')}
+                    >
+                      {t(lang, 'copyRequestId')}
+                    </button>
+                  )}
+                </span>
+                <button type="button" className="text-[11px]" onClick={() => void api.dismissNotice(n.id).then(() => api.listNotices(agent.id).then(setNotices))}>
+                  {t(lang, 'dismiss')}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {approvals.length > 0 && (
+          <div className="px-4 py-2 border-b border-amber-800/40 bg-amber-950/30 space-y-2">
+            {approvals.map((a) => (
+              <div key={a.id} className="flex items-center gap-2 text-xs text-amber-100">
+                <span className="flex-1 font-mono truncate">{a.toolName} {a.command}</span>
+                <button
+                  className="px-2 py-1 rounded bg-emerald-700"
+                  onClick={() => void api.resolveApproval(a.id, 'approved').then(() => api.listApprovals(agent.id).then(setApprovals))}
+                >
+                  {phone ? t(lang, 'approveOnce') : t(lang, 'approve')}
+                </button>
+                <button
+                  className="px-2 py-1 rounded bg-violet-700"
+                  onClick={() => void api.resolveApproval(a.id, 'always').then(() => api.listApprovals(agent.id).then(setApprovals))}
+                >
+                  {t(lang, 'alwaysAllowAction')}
+                </button>
+                <button
+                  className="px-2 py-1 rounded bg-red-800"
+                  onClick={() => void api.resolveApproval(a.id, 'denied').then(() => api.listApprovals(agent.id).then(setApprovals))}
+                >
+                  {t(lang, 'deny')}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto px-6 py-6">
+          <div className="max-w-[640px] mx-auto space-y-5">
+            {msgs.length === 0 && (
+              <div className="text-center mt-20" style={{ color: 'var(--gb-muted)' }}>
+                <div className="flex justify-center mb-3">
+                  <BotAvatar agent={agent} size={72} />
+                </div>
+                <p className="font-medium text-[16px] text-zinc-200">{first}</p>
+                <p className="text-[13px] mt-1">{agent.title}</p>
+                {agent.model ? (
+                  <p className="text-[11px] mt-0.5 font-mono" style={{ color: 'var(--gb-muted)' }}>
+                    {agent.modelProvider === 'huggingface' && agent.hfModel ? agent.hfModel : agent.model}
+                  </p>
+                ) : null}
+                <p className="text-[13px] mt-3 max-w-md mx-auto">{t(lang, 'emptyChat')}</p>
+              </div>
+            )}
+            <Transcript
+              msgs={msgs}
+              lang={lang}
+              busy={busy}
+              onSelect={(wid, sel) => {
+                void (async () => {
+                  setBusy(true);
+                  const asstId = `a-${Date.now()}`;
+                  setMsgs((prev) => [
+                    ...prev.map((x) =>
+                      x.kind === 'widget' && (x.meta as WidgetMeta)?.widgetId === wid
+                        ? { ...x, meta: { ...(x.meta as WidgetMeta), selected: sel } }
+                        : x
+                    ),
+                    { id: `u-${Date.now()}`, agentId: agent.id, role: 'user', content: sel, createdAt: new Date().toISOString() },
+                    { id: asstId, agentId: agent.id, role: 'assistant', content: '', streaming: true, createdAt: new Date().toISOString() },
+                  ]);
+                  const ac = new AbortController();
+                  abortRef.current = ac;
+                  await streamWidgetSelect(agent.id, wid, sel, handlersFor(asstId), ac.signal);
+                  setBusy(false);
+                })();
+              }}
+              onToggle={(id) => setMsgs((prev) => prev.map((x) => (x.id === id ? { ...x, open: !x.open } : x)))}
+              onReact={(id, emoji) => void api.react(id, emoji).then((nm) => setMsgs((prev) => prev.map((x) => (x.id === id ? nm : x))))}
+              onRegenerate={(id) => {
+                void (async () => {
+                  setBusy(true);
+                  const asstId = `a-${Date.now()}`;
+                  setMsgs((prev) => {
+                    const idx = prev.findIndex((x) => x.id === id);
+                    const base = idx >= 0 ? prev.slice(0, idx) : prev;
+                    return [...base, { id: asstId, agentId: agent.id, role: 'assistant', content: '', streaming: true, createdAt: new Date().toISOString() }];
+                  });
+                  const ac = new AbortController();
+                  abortRef.current = ac;
+                  await streamRegenerate(agent.id, id, handlersFor(asstId), ac.signal);
+                  setBusy(false);
+                })();
+              }}
+              onReply={(m) => setReplyTo(m)}
+            />
+            {(busy || typing) && (
+              <div className="flex gap-1.5 items-center px-1">
+                <span className="typing-dot h-1.5 w-1.5 rounded-full bg-zinc-400" />
+                <span className="typing-dot h-1.5 w-1.5 rounded-full bg-zinc-400" />
+                <span className="typing-dot h-1.5 w-1.5 rounded-full bg-zinc-400" />
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+        </div>
+
+        <ChatComposer
+          lang={lang}
+          phone={Boolean(phone)}
+          first={first}
+          input={input}
+          busy={busy}
+          listening={listening}
+          mentionOpen={mentionOpen}
+          slashOpen={slashOpen}
+          mentions={mentions}
+          groups={groups}
+          routines={routines}
+          plugins={plugins}
+          skills={skills}
+          replyTo={replyTo}
+          attachErr={attachErr}
+          pending={pending}
+          dropOver={dropOver}
+          fileRef={fileRef}
+          cameraRef={cameraRef}
+          insertAt={insertAt}
+          insertSlash={insertSlash}
+          setReplyTo={setReplyTo}
+          setDropOver={setDropOver}
+          addFiles={addFiles}
+          onComposerChange={onComposerChange}
+          send={send}
+          startDictate={startDictate}
+          abortRef={abortRef}
+          setBusy={setBusy}
+          setTyping={setTyping}
+        />
+      </div>
+      {paneOpen && (
+        phone ? (
+          <div className="fixed inset-0 z-40 bg-black/50" onClick={() => setPaneOpen(false)}>
+            <div className="absolute inset-x-0 bottom-0 top-10 rounded-t-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              <DetailsPane agent={agent} lang={lang} onClose={() => setPaneOpen(false)} onTakeover={openTakeover} full />
+            </div>
+          </div>
+        ) : (
+          <DetailsPane agent={agent} lang={lang} onClose={() => setPaneOpen(false)} onTakeover={openTakeover} />
+        )
+      )}
+      {takeover && (
+        <TakeoverOverlay agent={agent} lang={lang} comp={comp} onHandBack={closeTakeover} />
+      )}
+    </div>
+  );
+}

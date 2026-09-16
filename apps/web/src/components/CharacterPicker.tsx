@@ -1,5 +1,6 @@
 import type { Agent, AvatarShape } from '@grok-bot/shared';
-import { AVATAR_COLORS, AVATAR_SHAPES } from '@grok-bot/shared';
+import { AVATAR_SHAPES } from '@grok-bot/shared';
+import { AVATAR_COLORS } from '@grok-bot/shared/palette';
 import { t, type Lang } from '../lib/i18n';
 import BotAvatar from './BotAvatar';
 

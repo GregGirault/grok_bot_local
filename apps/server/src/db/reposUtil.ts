@@ -1,5 +1,6 @@
 import type { Agent, Attention, Presence } from '@grok-bot/shared';
-import { normalizeAvatarShape, normalizeModelProvider, snapAvatarColor } from '@grok-bot/shared';
+import { normalizeAvatarShape, normalizeModelProvider } from '@grok-bot/shared';
+import { snapAvatarColor } from '@grok-bot/shared/palette';
 
 export function parseJson<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;

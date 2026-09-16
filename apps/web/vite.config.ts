@@ -20,7 +20,12 @@ export default defineConfig({
     allowedHosts: true,
     fs: { allow: [repoRoot] },
     proxy: {
-      '/api': { target: 'http://127.0.0.1:48732', changeOrigin: true },
+      '/api': {
+        target: 'http://127.0.0.1:48732',
+        changeOrigin: true,
+        timeout: 0,
+        proxyTimeout: 0,
+      },
       '/health': { target: 'http://127.0.0.1:48732', changeOrigin: true },
       '/screenshots': { target: 'http://127.0.0.1:48732', changeOrigin: true },
       '/uploads': { target: 'http://127.0.0.1:48732', changeOrigin: true },

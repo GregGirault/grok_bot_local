@@ -234,9 +234,9 @@ export class LocalLlm {
 
     const reply = buildFrenchReply(user, opts.messages);
     for (const piece of chunkText(reply)) {
-      if (opts.signal?.aborted) return;
+      if (opts.signal?.aborted) break;
       yield { choices: [{ delta: { content: piece } }] };
-      await sleep(18);
+      await sleep(12);
     }
   }
 }

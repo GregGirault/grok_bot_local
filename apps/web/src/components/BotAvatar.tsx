@@ -1,5 +1,6 @@
 import type { Agent, AvatarShape, Presence } from '@grok-bot/shared';
-import { normalizeAvatarShape, snapAvatarColor } from '@grok-bot/shared';
+import { normalizeAvatarShape } from '@grok-bot/shared';
+import { snapAvatarColor } from '@grok-bot/shared/palette';
 
 function hashName(name: string): number {
   let h = 0;

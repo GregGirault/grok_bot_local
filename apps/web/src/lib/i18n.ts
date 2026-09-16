@@ -1,5 +1,6 @@
 import { FR } from './i18nFr';
 import { EN } from './i18nEn';
+import type { Presence } from '@grok-bot/shared';
 
 export type Lang = 'fr' | 'en';
 
@@ -38,7 +39,7 @@ export function applyAccent(color: string): void {
 export function initChromePrefs(): { theme: 'dark' | 'light' | 'system'; lang: Lang; accent: string } {
   const theme = (localStorage.getItem('gb-theme') as 'dark' | 'light' | 'system') || 'dark';
   const lang = loadLang();
-  const accent = localStorage.getItem('gb-accent') || '#8b5cf6';
+  const accent = localStorage.getItem('gb-accent') || '#FF6A00';
   applyTheme(theme);
   applyAccent(accent);
   return { theme, lang, accent };
@@ -57,7 +58,7 @@ export function formatTime(iso: string, lang: Lang): string {
   return d.toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-US', { weekday: 'long' });
 }
 
-export function presenceLabel(lang: Lang, p: string): string {
+export function presenceLabel(lang: Lang, p: Presence): string {
   switch (p) {
     case 'thinking':
       return t(lang, 'thinking');
@@ -71,7 +72,10 @@ export function presenceLabel(lang: Lang, p: string): string {
       return t(lang, 'done');
     case 'idle':
       return t(lang, 'idle');
-    default:
+    default: {
+      const _n: never = p;
+      void _n;
       return t(lang, 'idle');
+    }
   }
 }

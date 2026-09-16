@@ -135,8 +135,15 @@ export function registerHttpCore(d: HttpDeps): void {
   app.delete('/api/agents/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     try {
+      const existing = agents.get(id);
+      if (!existing) return reply.code(404).send({ error: 'Bot introuvable' });
       if (!agents.delete(id)) return reply.code(404).send({ error: 'Bot introuvable' });
-      return { ok: true };
+      const map = { ...(settings.getAll().botSkills ?? {}) };
+      if (map[id]) {
+        delete map[id];
+        settings.set({ botSkills: map });
+      }
+      return { ok: true, id };
     } catch (e) {
       req.log.error(e);
       return reply.code(500).send({
@@ -194,18 +201,38 @@ export function registerHttpCore(d: HttpDeps): void {
     const atts = ids.map((id) => uploads.get(id)).filter((x): x is NonNullable<typeof x> => Boolean(x));
     const write = sse(reply);
     const ac = new AbortController();
-    req.raw.on('close', () => ac.abort());
-    await runAgentChat(agent, message, undefined, write, loopDeps, ac.signal, {
-      attachments: atts,
-      skipPersistUser: extra?.skipPersistUser,
-      replyToId: extra?.replyToId,
+    req.raw.on('aborted', () => {
+      if (!ac.signal.aborted) ac.abort();
     });
-    reply.raw.end();
+    try {
+      await runAgentChat(agent, message, undefined, write, loopDeps, ac.signal, {
+        attachments: atts,
+        skipPersistUser: extra?.skipPersistUser,
+        replyToId: extra?.replyToId,
+      });
+    } catch (e) {
+      if (!ac.signal.aborted) {
+        write('typing', { active: false });
+        write('error', { message: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    if (!reply.raw.writableEnded) reply.raw.end();
   };
 
+  const chatBody = (req: FastifyRequest) =>
+    (req.body ?? {}) as { agentId?: string; message?: string; content?: string; attachmentIds?: string[]; replyToId?: string };
+
   app.post('/api/chat', async (req, reply) => {
-    const body = req.body as { agentId: string; message: string; attachmentIds?: string[]; replyToId?: string };
-    await runChat(req, reply, body.agentId, body.message, {
+    const body = chatBody(req);
+    await runChat(req, reply, String(body.agentId || ''), body.message || body.content || '', {
+      attachmentIds: body.attachmentIds,
+      replyToId: body.replyToId,
+    });
+  });
+  app.post('/api/agents/:id/chat', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = chatBody(req);
+    await runChat(req, reply, id, body.message || body.content || '', {
       attachmentIds: body.attachmentIds,
       replyToId: body.replyToId,
     });

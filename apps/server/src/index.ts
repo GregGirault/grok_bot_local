@@ -154,12 +154,25 @@ async function main() {
     taskRunner.enqueue(agentId, prompt, { parentTaskId: parentId, postToChat: true });
 
   const app = Fastify({ logger: false, bodyLimit: 210 * 1024 * 1024 });
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    const raw = typeof body === 'string' ? body : '';
+    if (!raw.trim()) {
+      done(null, {});
+      return;
+    }
+    try {
+      done(null, JSON.parse(raw) as unknown);
+    } catch (e) {
+      done(e as Error, undefined);
+    }
+  });
   await app.register(cors, { origin: true });
   await app.register(fastifyStatic, {
     root: path.join(dataDir, 'uploads'),
     prefix: '/uploads/',
     decorateReply: false,
   });
+
 
   const httpDeps: HttpDeps = {
     app,

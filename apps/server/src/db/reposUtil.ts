@@ -1,5 +1,5 @@
 import type { Agent, Attention, Presence } from '@grok-bot/shared';
-import { normalizeAvatarShape, normalizeModelProvider } from '@grok-bot/shared';
+import { normalizeAvatarShape, normalizeModelProvider, snapAvatarColor } from '@grok-bot/shared';
 
 export function parseJson<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
@@ -20,8 +20,8 @@ export function rowAgent(r: Record<string, unknown>): Agent {
     model: String(r.model ?? ''),
     hfModel: String(r.hf_model ?? ''),
     modelProvider: normalizeModelProvider(String(r.model_provider ?? 'ollama')),
-    avatarColor: String(r.avatar_color),
-        avatarShape: normalizeAvatarShape(String(r.avatar_shape)),
+    avatarColor: snapAvatarColor(String(r.avatar_color)),
+    avatarShape: normalizeAvatarShape(String(r.avatar_shape)),
     accessory: String(r.accessory || 'none'),
     hidden: Boolean(r.hidden),
     pinned: Boolean(r.pinned),

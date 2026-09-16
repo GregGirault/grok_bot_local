@@ -1,4 +1,3 @@
-/** Official Grok Bot character colors (11), then a few extras kept for existing bots. */
 export const AVATAR_COLORS = [
   '#F4EFE6',
   '#7A4A28',
@@ -15,6 +14,8 @@ export const AVATAR_COLORS = [
 
 export const CHROME_VERSION = '0.53.0';
 
+const FALLBACK = '#FF6A00';
+
 function hexRgb(color: string): [number, number, number] | null {
   const hex = color.replace('#', '').trim();
   if (hex.length === 3) {
@@ -30,7 +31,7 @@ function hexRgb(color: string): [number, number, number] | null {
 
 /** Recolle une couleur hors palette sur la pastille officielle la plus proche. */
 export function snapAvatarColor(color: string | undefined | null): string {
-  if (!color) return DEFAULT_AVATAR_COLOR;
+  if (!color) return FALLBACK;
   const raw = color.trim();
   const exact = AVATAR_COLORS.find((c) => c.toLowerCase() === raw.toLowerCase());
   if (exact) return exact;
@@ -59,8 +60,8 @@ export function snapAvatarColor(color: string | undefined | null): string {
   const aliased = aliases[raw.toLowerCase()];
   if (aliased) return aliased;
   const rgb = hexRgb(raw);
-  if (!rgb) return DEFAULT_AVATAR_COLOR;
-  let best = DEFAULT_AVATAR_COLOR;
+  if (!rgb) return FALLBACK;
+  let best = FALLBACK;
   let bestD = Infinity;
   for (const c of AVATAR_COLORS) {
     const o = hexRgb(c);

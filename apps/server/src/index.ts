@@ -32,6 +32,7 @@ import type { HttpDeps } from './http/deps';
 import { registerHttpCore } from './http/core';
 import { registerHttpWork } from './http/work';
 import { registerHttpExtra } from './http/extra';
+import { parseJsonBody } from './http/jsonBody';
 
 function serverHostFacts(): HostFacts {
   const cpus = os.cpus();
@@ -67,10 +68,12 @@ function findProjectRoot(): string {
 }
 
 function sse(reply: FastifyReply) {
+  reply.hijack();
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
   });
   return (event: string, data: unknown) => {
     reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -154,14 +157,9 @@ async function main() {
     taskRunner.enqueue(agentId, prompt, { parentTaskId: parentId, postToChat: true });
 
   const app = Fastify({ logger: false, bodyLimit: 210 * 1024 * 1024 });
-  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
-    const raw = typeof body === 'string' ? body : '';
-    if (!raw.trim()) {
-      done(null, {});
-      return;
-    }
+  app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (_req, body, done) => {
     try {
-      done(null, JSON.parse(raw) as unknown);
+      done(null, parseJsonBody(body));
     } catch (e) {
       done(e as Error, undefined);
     }

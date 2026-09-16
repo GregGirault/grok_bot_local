@@ -1,7 +1,6 @@
 import type { Agent, AvatarShape } from '@grok-bot/shared';
 import { AVATAR_SHAPES } from '@grok-bot/shared';
 import { AVATAR_COLORS } from '@grok-bot/shared/palette';
-import { t, type Lang } from '../lib/i18n';
 import BotAvatar from './BotAvatar';
 
 function shapeSelected(current: AvatarShape, option: AvatarShape): boolean {
@@ -11,40 +10,17 @@ function shapeSelected(current: AvatarShape, option: AvatarShape): boolean {
   return false;
 }
 
-function shapeLabel(shape: AvatarShape, lang?: Lang): string {
-  if (!lang) return shape;
-  switch (shape) {
-    case 'triangle':
-      return t(lang, 'shapeQuartier');
-    case 'hexagon':
-    case 'circle':
-    case 'blob':
-    case 'rounded':
-    case 'pill':
-    case 'cloud':
-    case 'drop':
-    case 'square':
-    case 'pebble':
-      return shape;
-    default: {
-      const _n: never = shape;
-      return _n;
-    }
-  }
-}
-
 export default function CharacterPicker({
   agent,
   color,
   shape,
-  lang,
   onColor,
   onShape,
 }: {
   agent: Pick<Agent, 'name' | 'title' | 'accessory'>;
   color: string;
   shape: AvatarShape;
-  lang?: Lang;
+  lang?: string;
   onColor: (c: string) => void;
   onShape: (s: AvatarShape) => void;
 }) {
@@ -55,8 +31,8 @@ export default function CharacterPicker({
           <button
             key={s}
             type="button"
-            aria-label={shapeLabel(s, lang)}
-            title={shapeLabel(s, lang)}
+            aria-label={s}
+            title={s}
             aria-pressed={shapeSelected(shape, s)}
             className={`h-12 rounded-xl flex items-center justify-center ${
               shapeSelected(shape, s) ? 'ring-1 ring-white/80 bg-zinc-800/80' : 'bg-transparent'

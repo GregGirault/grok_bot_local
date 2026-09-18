@@ -1,3 +1,52 @@
+export type AvatarShape =
+  | 'circle'
+  | 'blob'
+  | 'rounded'
+  | 'pill'
+  | 'triangle'
+  | 'hexagon'
+  | 'cloud'
+  | 'drop'
+  | 'square'
+  | 'pebble';
+
+/** Official Grok Bot character grid. square/pebble remain accepted for legacy ASTRA data. */
+export const AVATAR_SHAPES: AvatarShape[] = [
+  'circle',
+  'blob',
+  'rounded',
+  'pill',
+  'triangle',
+  'hexagon',
+  'cloud',
+  'drop',
+];
+
+export const DEFAULT_AVATAR_SHAPE: AvatarShape = 'blob';
+
+export function normalizeAvatarShape(shape: string | undefined | null): AvatarShape {
+  switch (shape) {
+    case 'circle':
+    case 'blob':
+    case 'rounded':
+    case 'pill':
+    case 'triangle':
+    case 'hexagon':
+    case 'cloud':
+    case 'drop':
+      return shape;
+    case 'square':
+      return 'rounded';
+    case 'pebble':
+      return 'blob';
+    default:
+      return DEFAULT_AVATAR_SHAPE;
+  }
+}
+
+export type Presence = 'idle' | 'thinking' | 'working' | 'waiting' | 'blocked' | 'done';
+export type ModelProvider = 'ollama' | 'huggingface' | 'local';
+
 export interface Agent {
   id: string;
   name: string;
@@ -5,7 +54,12 @@ export interface Agent {
   description: string;
   systemPrompt: string;
   avatarColor: string;
-  avatarShape: 'circle' | 'rounded' | 'square' | 'blob' | 'pebble';
+  avatarShape: AvatarShape;
+  model?: string;
+  hfModel?: string;
+  modelProvider?: ModelProvider;
+  accessory?: string;
+  presence?: Presence;
   hidden?: boolean;
   pinned?: boolean;
   notifyOnUpdates?: boolean;
@@ -19,7 +73,11 @@ export interface CreateAgentInput {
   description?: string;
   systemPrompt?: string;
   avatarColor?: string;
-  avatarShape?: 'circle' | 'rounded' | 'square' | 'blob' | 'pebble';
+  avatarShape?: AvatarShape;
+  model?: string;
+  hfModel?: string;
+  modelProvider?: ModelProvider;
+  accessory?: string;
   notifyOnUpdates?: boolean;
 }
 
@@ -29,7 +87,11 @@ export interface UpdateAgentInput {
   description?: string;
   systemPrompt?: string;
   avatarColor?: string;
-  avatarShape?: 'circle' | 'rounded' | 'square' | 'blob' | 'pebble';
+  avatarShape?: AvatarShape;
+  model?: string;
+  hfModel?: string;
+  modelProvider?: ModelProvider;
+  accessory?: string;
   hidden?: boolean;
   pinned?: boolean;
   notifyOnUpdates?: boolean;
@@ -145,6 +207,49 @@ export interface Settings {
   autoReviewEnabled?: boolean;
   autoReviewAskPatterns?: string[];
   autoReviewAllowPatterns?: string[];
+  installedPlugins?: string[];
+  pluginDisabledTools?: string[];
+}
+
+export interface PluginInfo {
+  slug: string;
+  name: string;
+  description: string;
+  category: string;
+  installed: boolean;
+  enabled: boolean;
+  tools: Array<{ name: string; enabled: boolean }>;
+  local: boolean;
+  auth?: 'none' | 'secret' | 'browser';
+}
+
+export interface TeachSession {
+  id: string;
+  agentId: string;
+  goal: string;
+  steps: Array<{ kind: string; detail: string; at: string }>;
+  status: 'recording' | 'review' | 'saved';
+  createdAt: string;
+}
+
+export interface ComputerEvent {
+  id: string;
+  agentId: string;
+  kind: 'navigate' | 'type' | 'click' | 'shell' | 'file' | 'status';
+  detail: string;
+  at: string;
+}
+
+export interface ComputerState {
+  active: boolean;
+  agentId?: string;
+  wallpaper: 'dawn' | 'day' | 'dusk' | 'night';
+  url?: string;
+  events: ComputerEvent[];
+  takeover: boolean;
+  image?: string;
+  reachable: boolean;
+  setupPhase?: 'starting' | 'updating' | 'ready';
 }
 
 export interface HealthStatus {

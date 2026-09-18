@@ -26,6 +26,13 @@ import {
 } from '../services/browser';
 import { runShell, type ToolContext } from '../tools';
 import { getMcpConfigRaw, saveMcpConfig, loadMcpConfig, type LoadedMcp } from '../services/mcp';
+import {
+  listPlugins,
+  installPlugin,
+  uninstallPlugin,
+  togglePluginTool,
+} from '../services/plugins';
+import { startTeach, addTeachStep, stopTeach, getTeach } from '../services/teach';
 
 export function registerExtraRoutes(
   app: FastifyInstance,
@@ -44,6 +51,7 @@ export function registerExtraRoutes(
     version: string;
     settings: SettingsRepo;
     projectRoot: string;
+    skillsDir: string;
     reloadMcp: () => LoadedMcp;
   }
 ): void {
@@ -62,6 +70,7 @@ export function registerExtraRoutes(
     version,
     settings,
     projectRoot,
+    skillsDir,
     reloadMcp,
   } = deps;
 
@@ -453,6 +462,85 @@ export function registerExtraRoutes(
       return { ok: true, servers: loaded.serverNames };
     }
   );
+
+  // —— Local plugin catalog ——
+  app.get('/api/plugins', async () => {
+    const s = settings.getAll();
+    return listPlugins(s.installedPlugins ?? [], s.pluginDisabledTools ?? []);
+  });
+  app.post<{ Params: { slug: string } }>('/api/plugins/:slug/install', async (req, reply) => {
+    try {
+      const s = settings.getAll();
+      const installed = installPlugin(s.installedPlugins ?? [], req.params.slug);
+      settings.set({ installedPlugins: installed });
+      return listPlugins(installed, settings.getAll().pluginDisabledTools ?? []);
+    } catch (e) {
+      return reply.code(404).send({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+  app.post<{ Params: { slug: string } }>('/api/plugins/:slug/uninstall', async (req, reply) => {
+    try {
+      const s = settings.getAll();
+      const installed = uninstallPlugin(s.installedPlugins ?? [], req.params.slug);
+      settings.set({ installedPlugins: installed });
+      return listPlugins(installed, settings.getAll().pluginDisabledTools ?? []);
+    } catch (e) {
+      return reply.code(404).send({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+  app.post<{
+    Params: { slug: string };
+    Body: { toolName: string; enabled: boolean };
+  }>('/api/plugins/:slug/tools', async (req, reply) => {
+    const { toolName, enabled } = req.body ?? {};
+    if (!toolName) return reply.code(400).send({ error: 'toolName required' });
+    const catalog = listPlugins(
+      settings.getAll().installedPlugins ?? [],
+      settings.getAll().pluginDisabledTools ?? []
+    );
+    const plugin = catalog.find((p) => p.slug === req.params.slug);
+    if (!plugin) return reply.code(404).send({ error: 'Plugin not found' });
+    if (!plugin.tools.some((t) => t.name === toolName)) {
+      return reply.code(400).send({ error: 'Tool does not belong to this plugin' });
+    }
+    const disabled = togglePluginTool(
+      settings.getAll().pluginDisabledTools ?? [],
+      toolName,
+      Boolean(enabled)
+    );
+    settings.set({ pluginDisabledTools: disabled });
+    return listPlugins(settings.getAll().installedPlugins ?? [], disabled);
+  });
+
+  // —— Teach a Bot by demonstration ——
+  app.post<{ Body: { agentId: string; goal: string } }>('/api/teach/start', async (req, reply) => {
+    const { agentId, goal } = req.body ?? {};
+    if (!agentId || !agents.get(agentId)) return reply.code(404).send({ error: 'Bot not found' });
+    if (!goal?.trim()) return reply.code(400).send({ error: 'goal required' });
+    return startTeach(agentId, goal.trim());
+  });
+  app.post<{ Params: { id: string }; Body: { kind: string; detail: string } }>(
+    '/api/teach/:id/step',
+    async (req, reply) => {
+      const s = addTeachStep(
+        req.params.id,
+        String(req.body?.kind || ''),
+        String(req.body?.detail || '')
+      );
+      if (!s) return reply.code(404).send({ error: 'Teach session not found' });
+      return s;
+    }
+  );
+  app.post<{ Params: { id: string } }>('/api/teach/:id/stop', async (req, reply) => {
+    const s = stopTeach(req.params.id, skillsDir);
+    if (!s) return reply.code(404).send({ error: 'Teach session not found' });
+    return s;
+  });
+  app.get<{ Params: { id: string } }>('/api/teach/:id', async (req, reply) => {
+    const s = getTeach(req.params.id);
+    if (!s) return reply.code(404).send({ error: 'Teach session not found' });
+    return s;
+  });
 
   // —— Skills content ——
   app.get<{ Params: { name: string } }>('/api/skills/:name', async (req, reply) => {

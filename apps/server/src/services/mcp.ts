@@ -51,6 +51,7 @@ class StdioMcpClient {
   private pending = new Map<number, Pending>();
   private buffer = '';
   private ready: Promise<void> | null = null;
+  private stopping = false;
   liveTools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }> =
     [];
 
@@ -63,6 +64,7 @@ class StdioMcpClient {
   async start(): Promise<void> {
     if (!this.entry.command) throw new Error(`MCP server ${this.entry.name} has no command`);
     if (this.ready) return this.ready;
+    this.stopping = false;
     this.ready = new Promise((resolve, reject) => {
       try {
         const args = (this.entry.args ?? []).map((a) => {
@@ -81,10 +83,12 @@ class StdioMcpClient {
         });
         this.proc.on('error', (err) => reject(err));
         this.proc.on('exit', (code) => {
-          for (const [, p] of this.pending) p.reject(new Error(`MCP exited ${code}`));
+          const err = new Error(this.stopping ? 'MCP stopped' : `MCP exited ${code}`);
+          for (const [, p] of this.pending) p.reject(err);
           this.pending.clear();
           this.proc = null;
           this.ready = null;
+          this.stopping = false;
         });
         // Initialize then list tools
         void this.request('initialize', {
@@ -192,9 +196,13 @@ class StdioMcpClient {
   }
 
   stop(): void {
-    this.proc?.kill();
-    this.proc = null;
-    this.ready = null;
+    if (!this.proc) {
+      this.ready = null;
+      this.stopping = false;
+      return;
+    }
+    this.stopping = true;
+    this.proc.kill();
   }
 }
 
@@ -356,7 +364,10 @@ export function loadMcpConfig(projectRoot: string): LoadedMcp {
             }
           }
         })
-        .catch((e) => console.warn(`[mcp] start ${server.name} failed:`, e));
+        .catch((e) => {
+          if (e instanceof Error && e.message === 'MCP stopped') return;
+          console.warn(`[mcp] start ${server.name} failed:`, e);
+        });
     } else if (server.url) {
       void ensureRemoteClient(server)
         .then((client) => {
@@ -504,6 +515,10 @@ export function saveMcpConfig(projectRoot: string, config: McpConfig): void {
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
   // Restart clients for changed servers
+  closeMcpClients();
+}
+
+export function closeMcpClients(): void {
   for (const c of clients.values()) c.stop();
   clients.clear();
   remoteClients.clear();

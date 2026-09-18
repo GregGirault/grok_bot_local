@@ -14,7 +14,7 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 | Surface | Statut | Notes / fichiers |
 |---------|--------|------------------|
 | Left sidebar dense dark chrome | **DONE** | `App.tsx` — 240px panel, sections |
-| Agent list + colored avatars (circle/rounded/square/blob/pebble) | **DONE** | `AgentAvatar.tsx` · `index.css` |
+| Agent list + Grok-style SVG character avatars | **DONE** | 8 shapes · 11 colors · `BotAvatar.tsx` · `CharacterPicker.tsx` |
 | Sidebar sections (Channels / Projects / Memory / Routines / Skills) | **DONE** | `App.tsx` NAV |
 | Hidden chats | **DONE** | DB `agents.hidden` · sidebar Hidden section · hide/unhide |
 | Account button bottom-left → Settings | **DONE** | Opens `/settings` |
@@ -44,6 +44,8 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 | Group channels + fan-out to members | **DONE** | |
 | Multi-user / org members | **DONE** | `team_members` table · Info pane · Channels attach |
 | Agent presence / typing indicators | **DONE** | SSE `typing` + UI dots while streaming |
+| ASTRA 10 specialized Bot roster | **DONE** | `db/astraRoster.ts` + anti-wipe seed |
+| Per-Bot Ollama routing | **DONE** | Hardware-validated `granite4:micro` / `granite3.3:2b` |
 
 ---
 
@@ -75,6 +77,9 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 | copy_to_workspace / copy_from_workspace | **DONE** | Machine-aware CopyToBox/FromBox analogs |
 | Confirm destructive actions (UI) | **DONE** | Dangerous shell → approval widget + banner |
 | spawn_task | **DONE** | Nested background task tool |
+| create_routine / save_skill | **DONE** | Bots can create reusable automation/skills |
+| mail / calendar / Git / Slack / Linear / CRM / Notes / X-local | **DONE** | Local capability packs, independently toggleable |
+| Plugin catalog / per-tool toggles | **DONE** | 13 packs · 34 memberships in validated config |
 
 ---
 
@@ -100,6 +105,7 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 | Skills UI list | **DONE** | |
 | Write / delete skill API | **DONE** | |
 | In-UI skill authoring editor | **DONE** | Create/edit markdown + frontmatter |
+| Teach by demonstration → skill | **DONE** | Bot info pane + `/api/teach/*` |
 
 ---
 
@@ -133,6 +139,7 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 | `config/mcp.json` loader | **DONE** | |
 | Dynamic tool registration | **DONE** | |
 | Live stdio MCP transport | **DONE** | JSON-RPC tools/list + tools/call · `scripts/mcp-echo-server.mjs` |
+| Streamable HTTP MCP transport | **DONE** | initialize + notifications/initialized + tools/list + tools/call |
 | Connectors settings UI | **DONE** | Enable/disable · edit mcp.json · show tools |
 
 ---
@@ -141,7 +148,8 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 
 | Capacité | Statut | Pointeurs |
 |----------|--------|-----------|
-| Playwright navigate + snapshot | **DONE** | Optional dep |
+| Playwright navigate + snapshot | **DONE** | Persistent Chromium profile |
+| Browser click / type / select / keypress / back | **DONE** | Agent tools + manual Computer pane controls |
 | Desktop / computer preview pane | **DONE** | Polling endpoint |
 | Registered machines list | **DONE** | Settings→Computer CRUD |
 | Auto-review safety gate | **DONE** | Approvals table + API + UI banner |
@@ -170,14 +178,27 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 
 ---
 
+## 13. Mobile / PWA / validation
+
+| Capacité | Statut | Pointeurs |
+|----------|--------|-----------|
+| Responsive mobile 390×844 | **DONE** | Playwright E2E |
+| Mobile drawer / chat / groups / settings / Bot info | **DONE** | `final-e2e.mjs` |
+| PWA manifest + service worker | **DONE** | `public/manifest.webmanifest` · `public/sw.js` |
+| Offline application shell | **DONE** | Runtime E2E verified |
+| LAN mode | **DONE** | `npm run mobile` / `start:lan` · `/api/network` |
+| Electron production renderer | **DONE** | Native Electron test hook verifies root/brand/health |
+
+---
+
 ## Honest leftovers
 
 | Item | Why |
 |------|-----|
-| True OS desktop capture (not browser page) | Requires native screen APIs / OS permissions; placeholder PNG used when Playwright page inactive |
+| True arbitrary OS GUI automation outside browser | Local clone currently automates persistent Chromium + shell/files; arbitrary desktop GUI control would require OS-specific accessibility/input APIs |
 | Electron auto-update binary channel | Optional package; “Check for updates” hits GitHub API only |
 | Multi-user auth / real org SSO | Local stub members only (by design for local-first) |
-| Full MCP SSE remote transport | Stdio live; URL/SSE servers remain config stubs |
+| Proprietary xAI/Cursor cloud infrastructure | Local equivalent by design; not the vendor's private cloud/runtime |
 
 ## Verify
 
@@ -185,12 +206,14 @@ Légende : **DONE** · **PARTIAL** · **TODO** · **STUB** (UI présente, backen
 |------|--------|
 | UI | http://127.0.0.1:5173 |
 | API health | http://127.0.0.1:8787/health |
-| Desktop | `npm run dev:desktop` (with `npm run dev` running) |
+| Desktop | `npm run desktop` |
+| Mobile/LAN | `npm run mobile` |
 | Webhooks | `POST /api/hooks/:routineId` |
 | Projects | `/projects` · `GET/POST /api/projects` |
 | Attachments | chat 📎 · `POST /api/uploads` |
 | Approvals | banner in chat · `POST /api/approvals/:id` |
 | MCP echo | `config/mcp.json` echo server · `scripts/mcp-echo-server.mjs` |
+| Final regression | `final-smoke.mjs` · `astra-richness-smoke.mjs` · `astra-model-smoke.mjs` · `astra-ui-smoke.mjs` · `final-browser.mjs` · `final-e2e.mjs` |
 
 ### Playwright (optional)
 

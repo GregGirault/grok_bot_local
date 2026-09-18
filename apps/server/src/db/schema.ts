@@ -12,8 +12,13 @@ CREATE TABLE IF NOT EXISTS agents (
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   system_prompt TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT '',
+  hf_model TEXT NOT NULL DEFAULT '',
+  model_provider TEXT NOT NULL DEFAULT 'ollama',
   avatar_color TEXT NOT NULL DEFAULT '#8b5cf6',
   avatar_shape TEXT NOT NULL DEFAULT 'circle',
+  accessory TEXT NOT NULL DEFAULT 'none',
+  presence TEXT NOT NULL DEFAULT 'idle',
   hidden INTEGER NOT NULL DEFAULT 0,
   pinned INTEGER NOT NULL DEFAULT 0,
   notify_on_updates INTEGER NOT NULL DEFAULT 1,
@@ -199,8 +204,23 @@ function migrate(db: Db): void {
   if (!hasColumn(db, 'agents', 'avatar_color')) {
     db.exec(`ALTER TABLE agents ADD COLUMN avatar_color TEXT NOT NULL DEFAULT '#8b5cf6'`);
   }
+  if (!hasColumn(db, 'agents', 'model')) {
+    db.exec(`ALTER TABLE agents ADD COLUMN model TEXT NOT NULL DEFAULT ''`);
+  }
+  if (!hasColumn(db, 'agents', 'hf_model')) {
+    db.exec(`ALTER TABLE agents ADD COLUMN hf_model TEXT NOT NULL DEFAULT ''`);
+  }
+  if (!hasColumn(db, 'agents', 'model_provider')) {
+    db.exec(`ALTER TABLE agents ADD COLUMN model_provider TEXT NOT NULL DEFAULT 'ollama'`);
+  }
   if (!hasColumn(db, 'agents', 'avatar_shape')) {
     db.exec(`ALTER TABLE agents ADD COLUMN avatar_shape TEXT NOT NULL DEFAULT 'circle'`);
+  }
+  if (!hasColumn(db, 'agents', 'accessory')) {
+    db.exec(`ALTER TABLE agents ADD COLUMN accessory TEXT NOT NULL DEFAULT 'none'`);
+  }
+  if (!hasColumn(db, 'agents', 'presence')) {
+    db.exec(`ALTER TABLE agents ADD COLUMN presence TEXT NOT NULL DEFAULT 'idle'`);
   }
   if (!hasColumn(db, 'agents', 'hidden')) {
     db.exec(`ALTER TABLE agents ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`);
@@ -319,6 +339,22 @@ When editing code, explain briefly what you changed.`,
     autoReviewEnabled: 'true',
     autoReviewAskPatterns: '[]',
     autoReviewAllowPatterns: '[]',
+    installedPlugins: JSON.stringify([
+      'files',
+      'browser',
+      'terminal',
+      'mail',
+      'calendar',
+      'github',
+      'slack',
+      'drive',
+      'mcp',
+      'linear',
+      'crm',
+      'notion',
+      'x',
+    ]),
+    pluginDisabledTools: '[]',
   };
   const upsert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   for (const [k, v] of Object.entries(defaults)) {

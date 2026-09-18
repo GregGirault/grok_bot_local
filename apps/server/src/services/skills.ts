@@ -57,6 +57,8 @@ export function writeSkill(skillsDir: string, name: string, content: string): Sk
   return loadSkills(skillsDir).find((s) => s.name === safe || s.name === name)!;
 }
 
+export const saveSkill = writeSkill;
+
 export function deleteSkill(skillsDir: string, name: string): boolean {
   const safe = name.replace(/[^a-zA-Z0-9_-]/g, '_');
   const file = path.join(skillsDir, `${safe}.md`);

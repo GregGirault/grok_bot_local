@@ -20,6 +20,8 @@ import type {
   RoutineRun,
   AttachmentInfo,
   SearchResult,
+  PluginInfo,
+  TeachSession,
 } from '@grok-bot/shared';
 
 const BASE = '';
@@ -191,6 +193,29 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ disabled }),
     }),
+  listPlugins: () => json<PluginInfo[]>('/api/plugins'),
+  installPlugin: (slug: string) =>
+    json<PluginInfo[]>(`/api/plugins/${encodeURIComponent(slug)}/install`, { method: 'POST' }),
+  uninstallPlugin: (slug: string) =>
+    json<PluginInfo[]>(`/api/plugins/${encodeURIComponent(slug)}/uninstall`, { method: 'POST' }),
+  togglePluginTool: (slug: string, toolName: string, enabled: boolean) =>
+    json<PluginInfo[]>(`/api/plugins/${encodeURIComponent(slug)}/tools`, {
+      method: 'POST',
+      body: JSON.stringify({ toolName, enabled }),
+    }),
+  startTeach: (agentId: string, goal: string) =>
+    json<TeachSession>('/api/teach/start', {
+      method: 'POST',
+      body: JSON.stringify({ agentId, goal }),
+    }),
+  addTeachStep: (id: string, kind: string, detail: string) =>
+    json<TeachSession>(`/api/teach/${id}/step`, {
+      method: 'POST',
+      body: JSON.stringify({ kind, detail }),
+    }),
+  stopTeach: (id: string) =>
+    json<TeachSession>(`/api/teach/${id}/stop`, { method: 'POST' }),
+  getTeach: (id: string) => json<TeachSession>(`/api/teach/${id}`),
   listMachines: () => json<Machine[]>('/api/machines'),
   createMachine: (body: { name: string; host?: string; path?: string }) =>
     json<Machine>('/api/machines', { method: 'POST', body: JSON.stringify(body) }),

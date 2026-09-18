@@ -1,5 +1,6 @@
-import type { Agent, Channel, Routine, TeamMember } from '@grok-bot/shared';
+import type { Agent, Channel, Routine, TeamMember, TeachSession } from '@grok-bot/shared';
 import AgentAvatar from './AgentAvatar';
+import CharacterPicker from './CharacterPicker';
 import { api } from '../lib/api';
 import { useEffect, useState } from 'react';
 
@@ -12,7 +13,7 @@ export default function AgentInfoPane({
   onClose: () => void;
   onUpdated: () => void;
 }) {
-  const [tab, setTab] = useState<'computer' | 'routines' | 'channels' | 'members' | 'settings'>(
+  const [tab, setTab] = useState<'computer' | 'teach' | 'routines' | 'channels' | 'members' | 'settings'>(
     'computer'
   );
   const [routines, setRoutines] = useState<Routine[]>([]);
@@ -28,6 +29,11 @@ export default function AgentInfoPane({
   const [computerSelector, setComputerSelector] = useState('');
   const [computerText, setComputerText] = useState('');
   const [computerStatus, setComputerStatus] = useState('');
+  const [teachGoal, setTeachGoal] = useState('');
+  const [teachSession, setTeachSession] = useState<TeachSession | null>(null);
+  const [teachKind, setTeachKind] = useState('click');
+  const [teachDetail, setTeachDetail] = useState('');
+  const [teachStatus, setTeachStatus] = useState('');
 
   useEffect(() => {
     setDraft(agent);
@@ -64,6 +70,10 @@ export default function AgentInfoPane({
       systemPrompt: draft.systemPrompt,
       avatarColor: draft.avatarColor,
       avatarShape: draft.avatarShape,
+      model: draft.model,
+      hfModel: draft.hfModel,
+      modelProvider: draft.modelProvider,
+      accessory: draft.accessory,
       pinned: draft.pinned,
       notifyOnUpdates: notify,
     });
@@ -102,6 +112,7 @@ export default function AgentInfoPane({
 
   const tabs = [
     { id: 'computer' as const, label: 'Computer' },
+    { id: 'teach' as const, label: 'Teach' },
     { id: 'routines' as const, label: 'Routines' },
     { id: 'channels' as const, label: 'Channels' },
     { id: 'members' as const, label: 'Members' },
@@ -236,6 +247,113 @@ export default function AgentInfoPane({
             </div>
           </div>
         )}
+        {tab === 'teach' && (
+          <div className="space-y-3">
+            <div>
+              <div className="text-xs font-medium">Teach this Bot a repeatable workflow</div>
+              <p className="mt-1 text-[11px]" style={{ color: 'var(--gb-muted)' }}>
+                Record the important actions, then save them as a reusable skill loaded into future conversations.
+              </p>
+            </div>
+            {!teachSession || teachSession.status === 'saved' ? (
+              <div className="space-y-2">
+                <textarea
+                  rows={3}
+                  value={teachGoal}
+                  onChange={(e) => setTeachGoal(e.target.value)}
+                  placeholder="Example: Deploy the local Grok Bot release safely"
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-2 text-xs"
+                />
+                <button
+                  type="button"
+                  disabled={!teachGoal.trim()}
+                  onClick={() =>
+                    void api
+                      .startTeach(agent.id, teachGoal.trim())
+                      .then((session) => {
+                        setTeachSession(session);
+                        setTeachStatus('Recording');
+                      })
+                      .catch((e) => setTeachStatus(e instanceof Error ? e.message : String(e)))
+                  }
+                  className="rounded-lg bg-violet-700 px-3 py-2 text-xs disabled:opacity-40"
+                >
+                  Start teaching
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-[11px]">
+                  <div className="font-medium">{teachSession.goal}</div>
+                  <div className="mt-1" style={{ color: 'var(--gb-muted)' }}>
+                    {teachSession.steps.length} recorded step{teachSession.steps.length === 1 ? '' : 's'}
+                  </div>
+                </div>
+                <div className="flex gap-1.5">
+                  <select
+                    value={teachKind}
+                    onChange={(e) => setTeachKind(e.target.value)}
+                    className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-2 text-[11px]"
+                  >
+                    <option value="navigate">navigate</option>
+                    <option value="click">click</option>
+                    <option value="type">type</option>
+                    <option value="shell">shell</option>
+                    <option value="file">file</option>
+                    <option value="status">status</option>
+                  </select>
+                  <input
+                    value={teachDetail}
+                    onChange={(e) => setTeachDetail(e.target.value)}
+                    placeholder="Describe the action"
+                    className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-2 text-[11px]"
+                  />
+                  <button
+                    type="button"
+                    disabled={!teachDetail.trim()}
+                    onClick={() =>
+                      teachSession &&
+                      void api
+                        .addTeachStep(teachSession.id, teachKind, teachDetail.trim())
+                        .then((session) => {
+                          setTeachSession(session);
+                          setTeachDetail('');
+                        })
+                    }
+                    className="rounded-lg bg-zinc-800 px-2 py-2 text-[11px] disabled:opacity-40"
+                  >
+                    Add
+                  </button>
+                </div>
+                <div className="max-h-40 space-y-1 overflow-y-auto">
+                  {teachSession.steps.map((step, index) => (
+                    <div key={`${step.at}-${index}`} className="rounded bg-zinc-900 px-2 py-1.5 text-[10px]">
+                      <span className="font-mono text-violet-300">{step.kind}</span>{' '}
+                      <span style={{ color: 'var(--gb-muted)' }}>{step.detail}</span>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void api
+                      .stopTeach(teachSession.id)
+                      .then((session) => {
+                        setTeachSession(session);
+                        setTeachStatus('Skill saved');
+                        setTeachGoal('');
+                      })
+                      .catch((e) => setTeachStatus(e instanceof Error ? e.message : String(e)))
+                  }
+                  className="rounded-lg bg-emerald-800 px-3 py-2 text-xs"
+                >
+                  Finish & save skill
+                </button>
+              </div>
+            )}
+            {teachStatus && <div className="text-[11px] text-emerald-300">{teachStatus}</div>}
+          </div>
+        )}
 
         {tab === 'routines' && (
           <div className="space-y-2">
@@ -343,6 +461,36 @@ export default function AgentInfoPane({
 
         {tab === 'settings' && (
           <div className="space-y-3">
+            <div>
+              <div className="text-[11px] mb-2" style={{ color: 'var(--gb-muted)' }}>
+                Official Grok Bot character
+              </div>
+              <CharacterPicker
+                agent={{ name: draft.name, title: draft.title, accessory: draft.accessory || 'none' }}
+                color={draft.avatarColor}
+                shape={draft.avatarShape}
+                onColor={(avatarColor) => setDraft({ ...draft, avatarColor })}
+                onShape={(avatarShape) => setDraft({ ...draft, avatarShape })}
+              />
+            </div>
+            <label className="block text-[11px]" style={{ color: 'var(--gb-muted)' }}>
+              Ollama model
+              <input
+                className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-2 text-xs font-mono"
+                value={draft.model || ''}
+                onChange={(e) => setDraft({ ...draft, model: e.target.value })}
+                placeholder="granite4:micro"
+              />
+            </label>
+            <label className="block text-[11px]" style={{ color: 'var(--gb-muted)' }}>
+              Hugging Face fallback model
+              <input
+                className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-2 text-xs font-mono"
+                value={draft.hfModel || ''}
+                onChange={(e) => setDraft({ ...draft, hfModel: e.target.value })}
+                placeholder="hf.co/Qwen/..."
+              />
+            </label>
             <Field label="Name (slug)" value={draft.name} onChange={(v) => setDraft({ ...draft, name: v })} mono />
             <Field label="Title" value={draft.title} onChange={(v) => setDraft({ ...draft, title: v })} />
             <Field

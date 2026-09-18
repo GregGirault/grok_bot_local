@@ -5,6 +5,7 @@ import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import multipart from '@fastify/multipart';
 import { openDatabase } from './db/schema';
+import { ensureAstraFleet } from './db/astraSeed';
 import {
   AgentRepo,
   MessageRepo,
@@ -67,6 +68,7 @@ async function main() {
   fs.mkdirSync(path.join(dataDir, 'screenshots'), { recursive: true });
 
   const db = openDatabase(dataDir);
+  ensureAstraFleet(db);
   const agents = new AgentRepo(db);
   const messages = new MessageRepo(db);
   const memory = new MemoryRepo(db);
@@ -107,6 +109,7 @@ async function main() {
     inbox,
     machines,
     approvals,
+    routines,
     mcp,
   };
 
@@ -176,6 +179,7 @@ async function main() {
     version: VERSION,
     settings,
     projectRoot,
+    skillsDir,
     reloadMcp: () => {
       mcp = loadMcpConfig(projectRoot);
       loopDeps.mcp = mcp;

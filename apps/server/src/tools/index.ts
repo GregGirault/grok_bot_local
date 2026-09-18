@@ -11,10 +11,27 @@ import type {
   MessageRepo,
   MachineRepo,
   ApprovalRepo,
+  RoutineRepo,
 } from '../db/repos';
 import type { LoadedMcp } from '../services/mcp';
 import type { Settings } from '@grok-bot/shared';
 import { executeMcpTool } from '../services/mcp';
+import {
+  listMail,
+  draftMail,
+  sendMail,
+  listCalendar,
+  createCalendarEvent,
+  slackPost,
+  listIssues,
+  createIssue,
+  listContacts,
+  addContact,
+  listNotes,
+  saveNote,
+  pluginAllows,
+} from '../services/plugins';
+import { saveSkill } from '../services/skills';
 import {
   browserNavigate,
   browserSnapshot,
@@ -40,6 +57,8 @@ export interface ToolContext {
   approvals?: ApprovalRepo;
   mcp?: LoadedMcp;
   settings?: Settings;
+  routines?: RoutineRepo;
+  skillsDir?: string;
   spawnTask?: (agentId: string, prompt: string, parentId?: string) => { id: string };
   onWidget?: (widget: {
     widgetId: string;
@@ -370,12 +389,218 @@ export const BASE_TOOL_DEFS: ToolDef[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'create_routine',
+      description: 'Create a scheduled routine for this Bot using a 5-field cron expression.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          cron: { type: 'string' },
+          prompt: { type: 'string' },
+        },
+        required: ['name', 'cron', 'prompt'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'save_skill',
+      description: 'Save a reusable markdown skill that becomes available to Bots.',
+      parameters: {
+        type: 'object',
+        properties: { name: { type: 'string' }, content: { type: 'string' } },
+        required: ['name', 'content'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_mail',
+      description: 'List the local mail workspace.',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'draft_mail',
+      description: 'Create a local mail draft. This does not send anything externally.',
+      parameters: {
+        type: 'object',
+        properties: {
+          to: { type: 'string' },
+          subject: { type: 'string' },
+          body: { type: 'string' },
+        },
+        required: ['to', 'subject', 'body'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'send_mail',
+      description: 'Mark a local mail draft as sent. Local simulation only.',
+      parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_events',
+      description: 'List events from the local calendar workspace.',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_event',
+      description: 'Create an event in the local calendar workspace.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          at: { type: 'string' },
+          where: { type: 'string' },
+        },
+        required: ['title', 'at'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_status',
+      description: 'Show git status and the last commits in the workspace.',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'slack_post',
+      description: 'Write a message to the local Slack-compatible workspace log.',
+      parameters: {
+        type: 'object',
+        properties: { channel: { type: 'string' }, text: { type: 'string' } },
+        required: ['channel', 'text'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'mcp_list',
+      description: 'List configured MCP servers and their advertised tools.',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'mcp_call',
+      description: 'Call a tool on a configured MCP server.',
+      parameters: {
+        type: 'object',
+        properties: {
+          server: { type: 'string' },
+          tool: { type: 'string' },
+          arguments: { type: 'object' },
+        },
+        required: ['server', 'tool'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_issues',
+      description: 'List local Linear-compatible issues.',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_issue',
+      description: 'Create a local Linear-compatible issue.',
+      parameters: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_contacts',
+      description: 'List contacts from the local CRM workspace.',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_contact',
+      description: 'Add a contact to the local CRM workspace.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          account: { type: 'string' },
+          note: { type: 'string' },
+        },
+        required: ['name'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_notes',
+      description: 'List markdown notes from the local notes workspace.',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'save_note',
+      description: 'Save a markdown note in the local notes workspace.',
+      parameters: {
+        type: 'object',
+        properties: { name: { type: 'string' }, content: { type: 'string' } },
+        required: ['name', 'content'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'x_post',
+      description: 'Write a post to the local X-compatible workspace journal. Nothing is published externally.',
+      parameters: {
+        type: 'object',
+        properties: { text: { type: 'string' }, channel: { type: 'string' } },
+        required: ['text'],
+      },
+    },
+  },
 ];
 
 export const TOOL_DEFS = BASE_TOOL_DEFS;
 
-export function getToolDefs(mcp?: LoadedMcp): ToolDef[] {
-  return [...BASE_TOOL_DEFS, ...(mcp?.toolDefs ?? [])];
+export function getToolDefs(mcp?: LoadedMcp, settings?: Settings): ToolDef[] {
+  const installed = settings?.installedPlugins;
+  const disabled = settings?.pluginDisabledTools ?? [];
+  const local = installed?.length
+    ? BASE_TOOL_DEFS.filter((d) => pluginAllows(installed, d.function.name, disabled))
+    : BASE_TOOL_DEFS;
+  const remote = (mcp?.toolDefs ?? []).filter((d) => !disabled.includes(d.function.name));
+  return [...local, ...remote];
 }
 
 const BLOCKED_SHELL = [
@@ -426,7 +651,7 @@ export async function executeTool(
   }
 
   try {
-    if (name.startsWith('mcp_') && ctx.mcp) {
+    if (name.startsWith('mcp_') && name !== 'mcp_list' && name !== 'mcp_call' && ctx.mcp) {
       return await executeMcpTool(name, argsJson, ctx.mcp);
     }
 
@@ -507,12 +732,108 @@ export async function executeTool(
           args.agent ? String(args.agent) : undefined,
           ctx
         );
+      case 'create_routine':
+        return toolCreateRoutine(
+          String(args.name ?? ''),
+          String(args.cron ?? ''),
+          String(args.prompt ?? ''),
+          ctx
+        );
+      case 'save_skill':
+        return toolSaveSkill(String(args.name ?? ''), String(args.content ?? ''), ctx);
+      case 'list_mail':
+        return listMail(ctx.workspaceRoot);
+      case 'draft_mail':
+        return draftMail(
+          ctx.workspaceRoot,
+          String(args.to ?? ''),
+          String(args.subject ?? ''),
+          String(args.body ?? ''),
+          ctx.agentId
+        );
+      case 'send_mail':
+        return sendMail(ctx.workspaceRoot, String(args.id ?? ''), ctx.agentId);
+      case 'list_events':
+        return listCalendar(ctx.workspaceRoot);
+      case 'create_event':
+        return createCalendarEvent(
+          ctx.workspaceRoot,
+          String(args.title ?? ''),
+          String(args.at ?? ''),
+          String(args.where ?? '')
+        );
+      case 'git_status':
+        return await runShell('git status -sb && git log -5 --oneline', ctx);
+      case 'slack_post':
+        return slackPost(ctx.workspaceRoot, String(args.channel ?? 'general'), String(args.text ?? ''));
+      case 'mcp_list':
+        return JSON.stringify(ctx.mcp?.config ?? { servers: [] });
+      case 'mcp_call': {
+        if (!ctx.mcp) return JSON.stringify({ error: 'MCP not configured' });
+        const server = String(args.server ?? '');
+        const tool = String(args.tool ?? '');
+        const callArgs = args.arguments ?? {};
+        const inner = typeof callArgs === 'string' ? callArgs : JSON.stringify(callArgs);
+        const toolName = `mcp_${server}_${tool}`.replace(/[^a-zA-Z0-9_]/g, '_');
+        return await executeMcpTool(toolName, inner, ctx.mcp);
+      }
+      case 'list_issues':
+        return listIssues(ctx.workspaceRoot);
+      case 'create_issue':
+        return createIssue(ctx.workspaceRoot, String(args.title ?? ''));
+      case 'list_contacts':
+        return listContacts(ctx.workspaceRoot);
+      case 'add_contact':
+        return addContact(
+          ctx.workspaceRoot,
+          String(args.name ?? ''),
+          String(args.account ?? ''),
+          String(args.note ?? '')
+        );
+      case 'list_notes':
+        return listNotes(ctx.workspaceRoot);
+      case 'save_note':
+        return saveNote(ctx.workspaceRoot, String(args.name ?? ''), String(args.content ?? ''));
+      case 'x_post':
+        return slackPost(
+          path.join(ctx.workspaceRoot, 'x'),
+          String(args.channel ?? 'timeline'),
+          String(args.text ?? '')
+        );
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
   } catch (e) {
     return JSON.stringify({ error: e instanceof Error ? e.message : String(e) });
   }
+}
+
+function toolCreateRoutine(name: string, cronExpr: string, prompt: string, ctx: ToolContext): string {
+  if (!ctx.routines) return JSON.stringify({ error: 'Routines not configured' });
+  if (!name.trim() || !cronExpr.trim() || !prompt.trim()) {
+    return JSON.stringify({ error: 'name, cron and prompt required' });
+  }
+  if (ctx.routines.list(ctx.agentId).length >= 50) {
+    return JSON.stringify({ error: 'Maximum 50 routines per Bot' });
+  }
+  const routine = ctx.routines.create({
+    agentId: ctx.agentId,
+    name: name.trim(),
+    cron: cronExpr.trim(),
+    prompt: prompt.trim(),
+    timezone: ctx.settings?.timezone,
+  });
+  return JSON.stringify({ ok: true, routine });
+}
+
+function toolSaveSkill(name: string, content: string, ctx: ToolContext): string {
+  if (!ctx.skillsDir) return JSON.stringify({ error: 'Skills not configured' });
+  if (!name.trim() || !content.trim()) return JSON.stringify({ error: 'name and content required' });
+  const body = content.includes('---')
+    ? content
+    : `---\nname: ${name.trim()}\ndescription: ${name.trim()}\n---\n\n${content}`;
+  const skill = saveSkill(ctx.skillsDir, name.trim(), body);
+  return JSON.stringify({ ok: true, name: skill.name, description: skill.description });
 }
 
 function toolSpawnTask(prompt: string, agentRef: string | undefined, ctx: ToolContext): string {

@@ -37,12 +37,112 @@ export interface ChatCompletionChunk {
   }>;
 }
 
+interface NativeToolCall {
+  id?: string;
+  type?: 'function';
+  function: {
+    index?: number;
+    name: string;
+    description?: string;
+    arguments?: unknown;
+  };
+}
+
+interface NativeMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content?: string;
+  thinking?: string;
+  tool_name?: string;
+  tool_calls?: NativeToolCall[];
+}
+
+interface NativeChatResponse {
+  model?: string;
+  message?: NativeMessage;
+  done?: boolean;
+  done_reason?: string;
+}
+
+function unwrapNativeArg(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(unwrapNativeArg);
+  if (!value || typeof value !== 'object') return value;
+  const obj = value as Record<string, unknown>;
+  if (obj.type === 'string' && typeof obj.content === 'string' && Object.keys(obj).length <= 2) {
+    return obj.content;
+  }
+  if (obj.type === 'number' && typeof obj.content === 'number' && Object.keys(obj).length <= 2) {
+    return obj.content;
+  }
+  if (obj.type === 'boolean' && typeof obj.content === 'boolean' && Object.keys(obj).length <= 2) {
+    return obj.content;
+  }
+  return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, unwrapNativeArg(v)]));
+}
+
+function toNativeToolCalls(toolCalls: ToolCall[] | undefined): NativeToolCall[] | undefined {
+  if (!toolCalls?.length) return undefined;
+  return toolCalls.map((call, index) => {
+    let args: unknown = {};
+    try {
+      args = JSON.parse(call.function.arguments || '{}');
+    } catch {
+      args = {};
+    }
+    return {
+      id: call.id,
+      type: 'function',
+      function: {
+        index,
+        name: call.function.name,
+        arguments: args,
+      },
+    };
+  });
+}
+
+function toNativeMessages(messages: ChatMessageParam[]): NativeMessage[] {
+  return messages.map((message) => {
+    if (message.role === 'tool') {
+      return {
+        role: 'tool',
+        tool_name: message.name,
+        content: message.content,
+      };
+    }
+    return {
+      role: message.role,
+      content: message.content,
+      ...(message.role === 'assistant' && message.tool_calls?.length
+        ? { tool_calls: toNativeToolCalls(message.tool_calls) }
+        : {}),
+    };
+  });
+}
+
+function fromNativeToolCalls(toolCalls: NativeToolCall[] | undefined): Array<{
+  index: number;
+  id?: string;
+  type?: 'function';
+  function?: { name?: string; arguments?: string };
+}> | undefined {
+  if (!toolCalls?.length) return undefined;
+  return toolCalls.map((call, index) => ({
+    index: call.function.index ?? index,
+    id: call.id || `call_native_${index}`,
+    type: 'function',
+    function: {
+      name: call.function.name,
+      arguments: JSON.stringify(unwrapNativeArg(call.function.arguments ?? {})),
+    },
+  }));
+}
+
 export class OllamaClient {
   constructor(public baseUrl: string) {}
 
   async listModels(): Promise<string[]> {
     const res = await fetch(`${this.baseUrl}/api/tags`, {
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) throw new Error(`Ollama tags failed: ${res.status}`);
     const data = (await res.json()) as { models?: Array<{ name: string }> };
@@ -66,12 +166,14 @@ export class OllamaClient {
   }): AsyncGenerator<ChatCompletionChunk> {
     const body: Record<string, unknown> = {
       model: opts.model,
-      messages: opts.messages,
+      messages: toNativeMessages(opts.messages),
       stream: true,
+      think: false,
+      keep_alive: '15m',
     };
     if (opts.tools?.length) body.tools = opts.tools;
 
-    const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+    const res = await fetch(`${this.baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -96,13 +198,49 @@ export class OllamaClient {
       buffer = lines.pop() ?? '';
       for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed || trimmed === 'data: [DONE]') continue;
-        const payload = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
+        if (!trimmed) continue;
         try {
-          yield JSON.parse(payload) as ChatCompletionChunk;
+          const chunk = JSON.parse(trimmed) as NativeChatResponse;
+          const native = chunk.message;
+          yield {
+            choices: [
+              {
+                delta: {
+                  ...(native?.content ? { content: native.content } : {}),
+                  ...(native?.tool_calls?.length
+                    ? { tool_calls: fromNativeToolCalls(native.tool_calls) }
+                    : {}),
+                },
+                finish_reason: chunk.done ? chunk.done_reason || 'stop' : null,
+              },
+            ],
+          };
         } catch {
           // skip malformed chunks
         }
+      }
+    }
+
+    const tail = buffer.trim();
+    if (tail) {
+      try {
+        const chunk = JSON.parse(tail) as NativeChatResponse;
+        const native = chunk.message;
+        yield {
+          choices: [
+            {
+              delta: {
+                ...(native?.content ? { content: native.content } : {}),
+                ...(native?.tool_calls?.length
+                  ? { tool_calls: fromNativeToolCalls(native.tool_calls) }
+                  : {}),
+              },
+              finish_reason: chunk.done ? chunk.done_reason || 'stop' : null,
+            },
+          ],
+        };
+      } catch {
+        // ignore malformed tail
       }
     }
   }
@@ -115,12 +253,14 @@ export class OllamaClient {
   }): Promise<{ content: string; tool_calls?: ToolCall[] }> {
     const body: Record<string, unknown> = {
       model: opts.model,
-      messages: opts.messages,
+      messages: toNativeMessages(opts.messages),
       stream: false,
+      think: false,
+      keep_alive: '15m',
     };
     if (opts.tools?.length) body.tools = opts.tools;
 
-    const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+    const res = await fetch(`${this.baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -130,12 +270,16 @@ export class OllamaClient {
       const text = await res.text().catch(() => '');
       throw new Error(`Ollama chat failed (${res.status}): ${text.slice(0, 500)}`);
     }
-    const data = (await res.json()) as {
-      choices: Array<{
-        message: { content?: string; tool_calls?: ToolCall[] };
-      }>;
-    };
-    const msg = data.choices[0]?.message;
-    return { content: msg?.content ?? '', tool_calls: msg?.tool_calls };
+    const data = (await res.json()) as NativeChatResponse;
+    const msg = data.message;
+    const calls = fromNativeToolCalls(msg?.tool_calls)?.map((call, index) => ({
+      id: call.id || `call_native_${index}`,
+      type: 'function' as const,
+      function: {
+        name: call.function?.name || '',
+        arguments: call.function?.arguments || '{}',
+      },
+    }));
+    return { content: msg?.content ?? '', tool_calls: calls };
   }
 }

@@ -8,12 +8,15 @@ import type {
   InboxRepo,
   MachineRepo,
   ApprovalRepo,
+  RoutineRepo,
 } from '../db/repos';
 import { OllamaClient, type ChatMessageParam, type ToolCall } from './ollama';
 import { getToolDefs, executeTool, type ToolContext } from '../tools';
 import { loadSkills, formatSkillsForPrompt } from './skills';
 import type { LoadedMcp } from './mcp';
 import type { AttachmentInfo } from '@grok-bot/shared';
+import { foldRuntimeKernel } from './promptKernel';
+import { ASTRA_BOT_NAMES } from '../db/astraRoster';
 
 export type SseWriter = (event: string, data: unknown) => void;
 
@@ -28,6 +31,7 @@ export interface AgentLoopDeps {
   inbox?: InboxRepo;
   machines?: MachineRepo;
   approvals?: ApprovalRepo;
+  routines?: RoutineRepo;
   mcp?: LoadedMcp;
   spawnTask?: (agentId: string, prompt: string, parentId?: string) => { id: string };
 }
@@ -51,7 +55,7 @@ export async function runAgentChat(
   const settings = deps.settings.getAll();
   const workspaceRoot = settings.workspaceRoot || deps.defaultWorkspace;
   const ollama = new OllamaClient(settings.ollamaBaseUrl);
-  const useModel = model || settings.defaultModel;
+  const useModel = model || agent.model || settings.defaultModel;
 
   // Auto tier promotion
   deps.memory.promoteStale(7);
@@ -78,8 +82,11 @@ export async function runAgentChat(
   const memoryBlock = deps.memory.formatForPrompt(agent.id);
   const skillsBlock = formatSkillsForPrompt(skills);
 
+  const basePrompt = ASTRA_BOT_NAMES.includes(agent.name)
+    ? foldRuntimeKernel(agent.systemPrompt)
+    : agent.systemPrompt;
   const systemPrompt =
-    agent.systemPrompt +
+    basePrompt +
     memoryBlock +
     skillsBlock +
     `\n\nWorkspace root: ${workspaceRoot}\nUse tools when helpful. Current date: ${new Date().toISOString().slice(0, 10)}.`;
@@ -113,6 +120,8 @@ export async function runAgentChat(
     approvals: deps.approvals,
     mcp: deps.mcp,
     settings,
+    routines: deps.routines,
+    skillsDir: deps.skillsDir,
     spawnTask: deps.spawnTask,
     onWidget: (widget) => {
       write('widget', widget);
@@ -122,7 +131,7 @@ export async function runAgentChat(
     },
   };
 
-  const toolDefs = getToolDefs(deps.mcp);
+  const toolDefs = getToolDefs(deps.mcp, settings);
   let rounds = 0;
   while (rounds < MAX_TOOL_ROUNDS) {
     rounds++;

@@ -69,7 +69,7 @@ try {
   await request('/api/settings', {
     method: 'PUT',
     body: JSON.stringify({
-      defaultModel: 'qwen3:0.6b',
+      defaultModel: 'granite4:micro',
       localExecutionPolicy: 'ask',
       autoReviewEnabled: true,
       timezone: 'Europe/Paris',
@@ -229,7 +229,6 @@ try {
     body: JSON.stringify({
       agentId: ollamaAgent.id,
       message: `Reply exactly ${ollamaToken} and nothing else.`,
-      model: 'qwen3:0.6b',
     }),
     signal: AbortSignal.timeout(180_000),
   });

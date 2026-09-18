@@ -33,8 +33,12 @@ export function registerAgentRoutes(
       title: body.title.trim(),
       description: body.description,
       systemPrompt: body.systemPrompt,
+      model: body.model,
+      hfModel: body.hfModel,
+      modelProvider: body.modelProvider,
       avatarColor: body.avatarColor,
       avatarShape: body.avatarShape,
+      accessory: body.accessory,
       notifyOnUpdates: body.notifyOnUpdates,
     });
     return reply.code(201).send(created);

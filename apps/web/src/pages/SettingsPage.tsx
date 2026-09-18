@@ -415,13 +415,15 @@ function ConnectionPane({
 
 function ConnectorsPane() {
   const [mcp, setMcp] = useState<Awaited<ReturnType<typeof api.getMcp>> | null>(null);
+  const [plugins, setPlugins] = useState<Awaited<ReturnType<typeof api.listPlugins>>>([]);
   const [raw, setRaw] = useState('[]');
   const [status, setStatus] = useState('');
 
   const refresh = async () => {
-    const [m, cfg] = await Promise.all([api.getMcp(), api.getMcpConfig()]);
+    const [m, cfg, p] = await Promise.all([api.getMcp(), api.getMcpConfig(), api.listPlugins()]);
     setMcp(m);
     setRaw(JSON.stringify(cfg.servers, null, 2));
+    setPlugins(p);
   };
 
   useEffect(() => {
@@ -430,10 +432,67 @@ function ConnectorsPane() {
 
   return (
     <div className="p-4 sm:p-6 max-w-2xl space-y-4">
-      <h2 className="text-base font-semibold">MCP Connectors</h2>
+      <h2 className="text-base font-semibold">Plugins & MCP Connectors</h2>
       <p className="text-[12px]" style={{ color: 'var(--gb-muted)' }}>
-        Enable/disable servers and edit <code>config/mcp.json</code> via the UI.
+        Local capability packs and external MCP servers. Tools can be enabled independently.
       </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {plugins.map((plugin) => (
+          <div
+            key={plugin.slug}
+            className="rounded-xl border p-3 space-y-2"
+            style={{ borderColor: 'var(--gb-border)', background: 'var(--gb-card)' }}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-[13px] font-medium truncate">{plugin.name}</div>
+                <div className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--gb-muted)' }}>
+                  {plugin.category} · {plugin.local ? 'local' : 'connector'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  void (plugin.installed ? api.uninstallPlugin(plugin.slug) : api.installPlugin(plugin.slug)).then(
+                    setPlugins
+                  )
+                }
+                className={`rounded-md px-2 py-1 text-[10px] ${
+                  plugin.installed ? 'bg-emerald-900/60 text-emerald-200' : 'bg-zinc-800 text-zinc-300'
+                }`}
+              >
+                {plugin.installed ? 'Installed' : 'Install'}
+              </button>
+            </div>
+            <p className="text-[11px] leading-snug" style={{ color: 'var(--gb-muted)' }}>
+              {plugin.description}
+            </p>
+            <div className="space-y-1">
+              {plugin.tools.map((tool) => (
+                <label key={tool.name} className="flex items-center gap-2 text-[10px] font-mono">
+                  <input
+                    type="checkbox"
+                    disabled={!plugin.installed}
+                    checked={plugin.installed && tool.enabled}
+                    onChange={(e) =>
+                      void api
+                        .togglePluginTool(plugin.slug, tool.name, e.target.checked)
+                        .then(setPlugins)
+                    }
+                  />
+                  <span className="truncate">{tool.name}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="border-t pt-4" style={{ borderColor: 'var(--gb-border)' }}>
+        <div className="text-[13px] font-medium mb-1">MCP servers</div>
+        <p className="text-[11px]" style={{ color: 'var(--gb-muted)' }}>
+          Real stdio/HTTP MCP transports declared in <code>config/mcp.json</code>.
+        </p>
+      </div>
       <ul className="space-y-2">
         {(mcp?.all || []).map((s) => (
           <li

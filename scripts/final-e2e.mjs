@@ -73,7 +73,7 @@ async function runDesktop(browser, agent, channel) {
 
   await page.keyboard.press('Control+,');
   await page.waitForURL('**/settings/general');
-  await page.getByText('Connection', { exact: true }).click();
+  await page.locator('a[href="/settings/connection"]').click();
   await page.waitForURL('**/settings/connection');
   await expectVisible(page.locator('label').filter({ hasText: 'Local shell execution' }).first(), 'desktop execution policy');
   await expectVisible(page.getByText('Mobile access', { exact: true }), 'desktop mobile access panel');
@@ -143,8 +143,9 @@ async function runMobile(browser, agent, channel) {
   console.log('PASS mobile-390x844-chat-draft');
 
   await page.getByRole('button', { name: 'Open navigation' }).click();
-  await expectVisible(page.getByRole('link', { name: /Search/ }), 'mobile drawer search link');
-  await page.getByRole('link', { name: /Search/ }).click();
+  const mobileSearchLink = page.locator('a[href="/search"]');
+  await expectVisible(mobileSearchLink, 'mobile drawer search link');
+  await mobileSearchLink.click();
   await expectVisible(page.locator('input[placeholder="Search prior work…"]'), 'mobile search page');
   await assertNoHorizontalOverflow(page, 'mobile search');
   console.log('PASS mobile-drawer-navigation');
@@ -178,8 +179,8 @@ async function runMobile(browser, agent, channel) {
 let browser;
 try {
   const agents = await api('/api/agents');
-  const dev = agents.find((a) => a.name === 'dev');
-  if (!dev) throw new Error('default dev Bot missing');
+  const anchor = agents.find((a) => a.name === 'oracle') || agents[0];
+  if (!anchor) throw new Error('no visible Bot available for E2E group');
 
   const agent = await api('/api/agents', {
     method: 'POST',
@@ -197,7 +198,7 @@ try {
     body: JSON.stringify({
       name: `e2e-${stamp}`,
       description: `E2E group ${stamp}`,
-      memberIds: [dev.id, agent.id],
+      memberIds: [anchor.id, agent.id],
     }),
   }, 201);
   created.channels.push(channel.id);

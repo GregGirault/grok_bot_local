@@ -80,8 +80,13 @@ function rowToAgent(r: Record<string, unknown>): Agent {
     title: r.title as string,
     description: r.description as string,
     systemPrompt: r.system_prompt as string,
+    model: (r.model as string) || undefined,
+    hfModel: (r.hf_model as string) || undefined,
+    modelProvider: ((r.model_provider as string) || 'ollama') as Agent['modelProvider'],
     avatarColor: (r.avatar_color as string) || pickColor(r.name as string),
     avatarShape: ((r.avatar_shape as string) || 'circle') as Agent['avatarShape'],
+    accessory: (r.accessory as string) || 'none',
+    presence: ((r.presence as string) || 'idle') as Agent['presence'],
     hidden: Boolean(r.hidden),
     pinned: Boolean(r.pinned),
     notifyOnUpdates: r.notify_on_updates === undefined ? true : Boolean(r.notify_on_updates),
@@ -173,8 +178,8 @@ export class AgentRepo {
     const shape = input.avatarShape || 'circle';
     this.db
       .prepare(
-        `INSERT INTO agents (id, name, title, description, system_prompt, avatar_color, avatar_shape, hidden, pinned, notify_on_updates, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)`
+        `INSERT INTO agents (id, name, title, description, system_prompt, model, hf_model, model_provider, avatar_color, avatar_shape, accessory, presence, hidden, pinned, notify_on_updates, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', 0, 0, ?, ?, ?)`
       )
       .run(
         id,
@@ -182,8 +187,12 @@ export class AgentRepo {
         input.title,
         input.description ?? '',
         input.systemPrompt ?? 'You are a helpful assistant.',
+        input.model ?? '',
+        input.hfModel ?? '',
+        input.modelProvider ?? 'ollama',
         color,
         shape,
+        input.accessory ?? 'none',
         input.notifyOnUpdates === false ? 0 : 1,
         now,
         now
@@ -198,15 +207,20 @@ export class AgentRepo {
     this.db
       .prepare(
         `UPDATE agents SET name = ?, title = ?, description = ?, system_prompt = ?,
-         avatar_color = ?, avatar_shape = ?, hidden = ?, pinned = ?, notify_on_updates = ?, updated_at = ? WHERE id = ?`
+         model = ?, hf_model = ?, model_provider = ?, avatar_color = ?, avatar_shape = ?, accessory = ?,
+         hidden = ?, pinned = ?, notify_on_updates = ?, updated_at = ? WHERE id = ?`
       )
       .run(
         input.name ?? existing.name,
         input.title ?? existing.title,
         input.description ?? existing.description,
         input.systemPrompt ?? existing.systemPrompt,
+        input.model ?? existing.model ?? '',
+        input.hfModel ?? existing.hfModel ?? '',
+        input.modelProvider ?? existing.modelProvider ?? 'ollama',
         input.avatarColor ?? existing.avatarColor,
         input.avatarShape ?? existing.avatarShape,
+        input.accessory ?? existing.accessory ?? 'none',
         input.hidden !== undefined ? (input.hidden ? 1 : 0) : existing.hidden ? 1 : 0,
         input.pinned !== undefined ? (input.pinned ? 1 : 0) : existing.pinned ? 1 : 0,
         input.notifyOnUpdates !== undefined
@@ -636,6 +650,8 @@ export class SettingsRepo {
       autoReviewEnabled: map.autoReviewEnabled !== 'false',
       autoReviewAskPatterns: parseStringArray(map.autoReviewAskPatterns),
       autoReviewAllowPatterns: parseStringArray(map.autoReviewAllowPatterns),
+      installedPlugins: parseStringArray(map.installedPlugins),
+      pluginDisabledTools: parseStringArray(map.pluginDisabledTools),
     };
   }
 

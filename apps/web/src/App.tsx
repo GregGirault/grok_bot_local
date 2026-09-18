@@ -12,6 +12,7 @@ import RoutinesPage from './pages/RoutinesPage';
 import SkillsPage from './pages/SkillsPage';
 import ChannelsPage from './pages/ChannelsPage';
 import ProjectsPage from './pages/ProjectsPage';
+import SearchPage from './pages/SearchPage';
 
 export default function App() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -21,6 +22,7 @@ export default function App() {
   const [confirmDelete, setConfirmDelete] = useState<Agent | null>(null);
   const [lang, setLang] = useState<Lang>('en');
   const [approvals, setApprovals] = useState<number>(0);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -58,6 +60,10 @@ export default function App() {
         e.preventDefault();
         navigate('/settings');
       }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        navigate('/search');
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -94,6 +100,7 @@ export default function App() {
   };
 
   const NAV = [
+    { to: '/search', label: t(lang, 'search'), icon: '⌕' },
     { to: '/channels', label: t(lang, 'channels'), icon: '#' },
     { to: '/projects', label: t(lang, 'projects'), icon: '◩' },
     { to: '/memory', label: t(lang, 'memory'), icon: '◈' },
@@ -102,9 +109,19 @@ export default function App() {
   ];
 
   return (
-    <div className="flex h-full gb-dense" onContextMenu={(e) => e.preventDefault()}>
+    <div className="relative flex h-full gb-dense" onContextMenu={(e) => e.preventDefault()}>
+      {mobileNavOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          className="fixed inset-0 z-30 bg-black/60 md:hidden"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
       <aside
-        className="w-[240px] shrink-0 border-r flex flex-col"
+        className={`fixed inset-y-0 left-0 z-40 flex w-[280px] shrink-0 flex-col border-r transition-transform duration-200 md:static md:w-[240px] md:translate-x-0 ${
+          mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
         style={{ background: 'var(--gb-panel)', borderColor: 'var(--gb-border)' }}
       >
         <div className="px-3 py-3 border-b" style={{ borderColor: 'var(--gb-border)' }}>
@@ -135,6 +152,7 @@ export default function App() {
             <NavLink
               key={n.to}
               to={n.to}
+              onClick={() => setMobileNavOpen(false)}
               className={({ isActive }) =>
                 `flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12px] transition ${
                   isActive ? 'bg-zinc-800 text-white' : 'hover:bg-zinc-900'
@@ -165,6 +183,7 @@ export default function App() {
             <NavLink
               key={a.id}
               to={`/chat/${a.id}`}
+              onClick={() => setMobileNavOpen(false)}
               onContextMenu={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -178,7 +197,9 @@ export default function App() {
             >
               <AgentAvatar agent={a} size={26} />
               <div className="min-w-0 flex-1">
-                <div className="font-medium text-[12px] truncate leading-tight">{a.title}</div>
+                <div className="font-medium text-[12px] truncate leading-tight">
+                  {a.pinned ? '★ ' : ''}{a.title}
+                </div>
                 <div className="text-[10px] truncate leading-tight" style={{ color: 'var(--gb-muted)' }}>
                   @{a.name}
                 </div>
@@ -224,7 +245,10 @@ export default function App() {
 
         <div className="border-t p-1.5" style={{ borderColor: 'var(--gb-border)' }}>
           <button
-            onClick={() => navigate('/settings')}
+            onClick={() => {
+              navigate('/settings');
+              setMobileNavOpen(false);
+            }}
             className={`w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px] transition ${
               location.pathname.startsWith('/settings')
                 ? 'bg-zinc-800 text-white'
@@ -241,7 +265,27 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0" style={{ background: 'var(--gb-bg)' }}>
+      <div
+        className="fixed inset-x-0 top-0 z-20 flex h-11 items-center gap-2 border-b px-2 md:hidden"
+        style={{ background: 'var(--gb-panel)', borderColor: 'var(--gb-border)' }}
+      >
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen(true)}
+          className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-800 text-lg"
+          aria-label="Open navigation"
+        >
+          ☰
+        </button>
+        <span className="truncate text-[13px] font-semibold">Grok Bot Local</span>
+        {approvals > 0 && (
+          <span className="ml-auto rounded-full bg-amber-900 px-2 py-0.5 text-[10px] text-amber-200">
+            {approvals}
+          </span>
+        )}
+      </div>
+
+      <main className="min-w-0 flex-1 pt-11 md:pt-0" style={{ background: 'var(--gb-bg)' }}>
         <Routes>
           <Route path="/" element={<Home agents={agents} />} />
           <Route path="/chat/:agentId" element={<ChatPage onAgentsChange={refresh} lang={lang} />} />
@@ -249,6 +293,7 @@ export default function App() {
           <Route path="/channels" element={<ChannelsPage />} />
           <Route path="/channels/:id" element={<ChannelsPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/search" element={<SearchPage />} />
           <Route path="/memory" element={<MemoryPage />} />
           <Route path="/routines" element={<RoutinesPage />} />
           <Route path="/skills" element={<SkillsPage />} />
@@ -283,6 +328,15 @@ export default function App() {
             }}
           >
             {t(lang, 'openChat')}
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 hover:bg-zinc-800"
+            onClick={() => {
+              void api.updateAgent(ctxMenu.agent.id, { pinned: !ctxMenu.agent.pinned }).then(refresh);
+              setCtxMenu(null);
+            }}
+          >
+            {ctxMenu.agent.pinned ? 'Unpin' : 'Pin'}
           </button>
           <button
             className="w-full text-left px-3 py-1.5 hover:bg-zinc-800"

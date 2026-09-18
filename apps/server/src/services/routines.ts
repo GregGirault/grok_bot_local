@@ -1,4 +1,5 @@
 import cron from 'node-cron';
+import type { ScheduledTask } from 'node-cron';
 import type { AgentRepo, RoutineRepo } from '../db/repos';
 import type { AgentLoopDeps } from './agentLoop';
 import { wakeAgent } from './agentLoop';
@@ -9,7 +10,7 @@ function isEmptyOutput(text: string): boolean {
 }
 
 export class RoutineScheduler {
-  private tasks = new Map<string, cron.ScheduledTask>();
+  private tasks = new Map<string, ScheduledTask>();
 
   constructor(
     private routines: RoutineRepo,
@@ -34,17 +35,24 @@ export class RoutineScheduler {
         console.warn(`[routines] invalid cron for ${r.name}: ${r.cron}`);
         continue;
       }
-      const task = cron.schedule(r.cron, () => {
-        void this.runRoutine(r.id);
-      });
+      const task = cron.schedule(
+        r.cron,
+        () => {
+          void this.runRoutine(r.id);
+        },
+        r.timezone ? { timezone: r.timezone } : undefined
+      );
       this.tasks.set(r.id, task);
     }
     console.log(`[routines] scheduled ${this.tasks.size} job(s)`);
   }
 
-  async runRoutine(id: string): Promise<{ skipped?: boolean; output?: string }> {
+  async runRoutine(
+    id: string,
+    opts?: { force?: boolean }
+  ): Promise<{ skipped?: boolean; output?: string }> {
     const r = this.routines.get(id);
-    if (!r || !r.enabled) return {};
+    if (!r || (!r.enabled && !opts?.force)) return {};
     const agent = this.agents.get(r.agentId);
     if (!agent) {
       console.warn(`[routines] agent missing for routine ${r.name}`);

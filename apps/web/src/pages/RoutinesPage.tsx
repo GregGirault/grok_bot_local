@@ -12,6 +12,7 @@ export default function RoutinesPage() {
     cron: '0 9 * * *',
     prompt: 'Give me a brief morning status of the workspace.',
     quietIfEmpty: true,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   });
 
   const refresh = async () => {
@@ -48,7 +49,7 @@ export default function RoutinesPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto p-8 max-w-3xl">
+    <div className="h-full overflow-y-auto p-4 sm:p-8 max-w-3xl">
       <h1 className="text-2xl font-semibold mb-1">Routines</h1>
       <p className="text-sm mb-6" style={{ color: 'var(--gb-muted)' }}>
         Cron wakes · quiet-if-empty · webhooks · run history
@@ -78,6 +79,7 @@ export default function RoutinesPage() {
                   </div>
                   <div className="text-xs font-mono mt-0.5" style={{ color: 'var(--gb-muted)' }}>
                     {r.cron} · {r.enabled ? 'running' : 'paused'}
+                    {r.timezone ? ` · ${r.timezone}` : ''}
                     {r.quietIfEmpty ? ' · quiet-if-empty' : ''}
                     {r.lastRunAt ? ` · last ${r.lastRunAt}` : ''}
                   </div>
@@ -152,6 +154,12 @@ export default function RoutinesPage() {
           placeholder="Cron"
           value={form.cron}
           onChange={(e) => setForm({ ...form, cron: e.target.value })}
+        />
+        <input
+          className="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm font-mono"
+          placeholder="IANA timezone, e.g. Europe/Paris"
+          value={form.timezone}
+          onChange={(e) => setForm({ ...form, timezone: e.target.value })}
         />
         <textarea
           className="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm"

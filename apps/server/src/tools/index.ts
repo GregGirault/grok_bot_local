@@ -13,11 +13,17 @@ import type {
   ApprovalRepo,
 } from '../db/repos';
 import type { LoadedMcp } from '../services/mcp';
+import type { Settings } from '@grok-bot/shared';
 import { executeMcpTool } from '../services/mcp';
 import {
   browserNavigate,
   browserSnapshot,
   browserScreenshot,
+  browserClick,
+  browserType,
+  browserSelect,
+  browserPress,
+  browserBack,
 } from '../services/browser';
 
 const execFileAsync = promisify(execFile);
@@ -33,6 +39,7 @@ export interface ToolContext {
   machines?: MachineRepo;
   approvals?: ApprovalRepo;
   mcp?: LoadedMcp;
+  settings?: Settings;
   spawnTask?: (agentId: string, prompt: string, parentId?: string) => { id: string };
   onWidget?: (widget: {
     widgetId: string;
@@ -242,6 +249,67 @@ export const BASE_TOOL_DEFS: ToolDef[] = [
   {
     type: 'function',
     function: {
+      name: 'browser_click',
+      description: 'Click an element in the current browser page. Selector can be CSS, text=Label, or role=button|Name.',
+      parameters: {
+        type: 'object',
+        properties: { selector: { type: 'string' } },
+        required: ['selector'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_type',
+      description: 'Fill a browser input/textarea and optionally press Enter.',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string' },
+          text: { type: 'string' },
+          clear: { type: 'boolean' },
+          pressEnter: { type: 'boolean' },
+        },
+        required: ['selector', 'text'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_select',
+      description: 'Select an option by value in a browser select element.',
+      parameters: {
+        type: 'object',
+        properties: { selector: { type: 'string' }, value: { type: 'string' } },
+        required: ['selector', 'value'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_press',
+      description: 'Press a keyboard key in the current browser page, e.g. Escape, Enter, Control+L.',
+      parameters: {
+        type: 'object',
+        properties: { key: { type: 'string' } },
+        required: ['key'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_back',
+      description: 'Navigate the current browser page back once.',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'screenshot',
       description: 'Capture a screenshot of the current browser page; saves under data/screenshots.',
       parameters: {
@@ -404,6 +472,19 @@ export async function executeTool(
         return await browserNavigate(String(args.url ?? ''));
       case 'browser_snapshot':
         return await browserSnapshot();
+      case 'browser_click':
+        return await browserClick(String(args.selector ?? ''));
+      case 'browser_type':
+        return await browserType(String(args.selector ?? ''), String(args.text ?? ''), {
+          clear: args.clear === undefined ? true : Boolean(args.clear),
+          pressEnter: Boolean(args.pressEnter),
+        });
+      case 'browser_select':
+        return await browserSelect(String(args.selector ?? ''), String(args.value ?? ''));
+      case 'browser_press':
+        return await browserPress(String(args.key ?? ''));
+      case 'browser_back':
+        return await browserBack();
       case 'screenshot':
         return await browserScreenshot(ctx.dataDir, args.path ? String(args.path) : undefined);
       case 'copy_to_workspace':
@@ -511,9 +592,15 @@ function toolSendToAgent(target: string, message: string, ctx: ToolContext): str
     content: `[Message from agent] ${message.trim()}`,
     kind: 'system',
   });
+  const source = ctx.agents.get(ctx.agentId);
+  const task = ctx.spawnTask?.(
+    dest.id,
+    `[Handoff from @${source?.name || ctx.agentId}] ${message.trim()}\n\nHandle this asynchronously. When useful, use send_to_agent to report the result back to @${source?.name || ctx.agentId}.`
+  );
   return JSON.stringify({
     ok: true,
     inboxId: msg.id,
+    taskId: task?.id,
     to: { id: dest.id, name: dest.name },
   });
 }
@@ -555,8 +642,33 @@ async function toolShell(command: string, ctx: ToolContext): Promise<string> {
     }
   }
 
-  // Destructive confirm via ask_user / approval
-  const needsAsk = DANGEROUS_ASK.some((re) => re.test(command));
+  const policy = ctx.settings?.localExecutionPolicy || 'ask';
+  if (policy === 'never') {
+    return JSON.stringify({
+      error: 'Local shell execution is disabled by policy',
+      policy,
+    });
+  }
+
+  const matchesRule = (patterns: string[] | undefined): boolean =>
+    (patterns || []).some((pattern) => {
+      try {
+        return new RegExp(pattern, 'i').test(command);
+      } catch {
+        return command.toLowerCase().includes(pattern.toLowerCase());
+      }
+    });
+  const askRule = matchesRule(ctx.settings?.autoReviewAskPatterns);
+  const allowRule = matchesRule(ctx.settings?.autoReviewAllowPatterns);
+  const dangerous = DANGEROUS_ASK.some((re) => re.test(command));
+
+  // Ask-first rules win. With local policy "ask", every shell command pauses
+  // unless an explicit allow rule matches. Dangerous commands remain gated
+  // while Auto Review is enabled even if an allow rule also matches.
+  const needsAsk =
+    askRule ||
+    (ctx.settings?.autoReviewEnabled !== false && dangerous) ||
+    (policy === 'ask' && !allowRule);
   if (needsAsk && ctx.approvals) {
     const approval = ctx.approvals.create(ctx.agentId, 'shell', command);
     const widgetId = uuid();

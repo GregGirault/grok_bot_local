@@ -7,6 +7,7 @@ export interface Agent {
   avatarColor: string;
   avatarShape: 'circle' | 'rounded' | 'square' | 'blob' | 'pebble';
   hidden?: boolean;
+  pinned?: boolean;
   notifyOnUpdates?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -30,6 +31,7 @@ export interface UpdateAgentInput {
   avatarColor?: string;
   avatarShape?: 'circle' | 'rounded' | 'square' | 'blob' | 'pebble';
   hidden?: boolean;
+  pinned?: boolean;
   notifyOnUpdates?: boolean;
 }
 
@@ -77,6 +79,8 @@ export interface ChatMessage {
   toolName?: string;
   toolCallId?: string;
   attachments?: AttachmentInfo[];
+  parentMessageId?: string;
+  reactions?: Record<string, number>;
   editedAt?: string;
   createdAt: string;
 }
@@ -102,6 +106,7 @@ export interface Routine {
   prompt: string;
   enabled: boolean;
   quietIfEmpty?: boolean;
+  timezone?: string;
   webhookToken?: string;
   lastRunAt?: string;
   createdAt: string;
@@ -114,6 +119,7 @@ export interface CreateRoutineInput {
   prompt: string;
   enabled?: boolean;
   quietIfEmpty?: boolean;
+  timezone?: string;
 }
 
 export interface RoutineRun {
@@ -134,6 +140,11 @@ export interface Settings {
   accentColor?: string;
   taskConcurrency?: number;
   githubRepo?: string;
+  timezone?: string;
+  localExecutionPolicy?: 'ask' | 'always' | 'never';
+  autoReviewEnabled?: boolean;
+  autoReviewAskPatterns?: string[];
+  autoReviewAllowPatterns?: string[];
 }
 
 export interface HealthStatus {
@@ -185,6 +196,7 @@ export interface Channel {
   name: string;
   description: string;
   memberIds: string[];
+  pinned?: boolean;
   createdAt: string;
 }
 
@@ -193,7 +205,19 @@ export interface ChannelMessage {
   channelId: string;
   fromAgentId?: string;
   content: string;
+  replyToId?: string;
+  reactions?: Record<string, number>;
   createdAt: string;
+}
+
+export interface SearchResult {
+  type: 'agent' | 'message' | 'channel' | 'routine' | 'file';
+  id: string;
+  title: string;
+  subtitle?: string;
+  snippet?: string;
+  target: string;
+  createdAt?: string;
 }
 
 export interface BackgroundTask {
@@ -222,6 +246,7 @@ export interface McpServerConfig {
   command?: string;
   args?: string[];
   url?: string;
+  headers?: Record<string, string>;
   env?: Record<string, string>;
   disabled?: boolean;
   tools?: Array<{
@@ -286,4 +311,9 @@ export const DEFAULT_SETTINGS: Settings = {
   accentColor: '#8b5cf6',
   taskConcurrency: 2,
   githubRepo: 'GregGirault/grok_bot_local',
+  timezone: 'UTC',
+  localExecutionPolicy: 'ask',
+  autoReviewEnabled: true,
+  autoReviewAskPatterns: [],
+  autoReviewAllowPatterns: [],
 };

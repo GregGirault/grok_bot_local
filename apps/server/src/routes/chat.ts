@@ -17,14 +17,24 @@ export function registerChatRoutes(
       message: string;
       model?: string;
       attachmentIds?: string[];
+      parentMessageId?: string;
     };
   }>('/api/chat', async (req, reply) => {
-    const { agentId, message, model, attachmentIds } = req.body ?? {};
+    const { agentId, message, model, attachmentIds, parentMessageId } = req.body ?? {};
     if (!agentId || !message?.trim()) {
       return reply.code(400).send({ error: 'agentId and message required' });
     }
     const agent = agents.get(agentId);
     if (!agent) return reply.code(404).send({ error: 'Agent not found' });
+    if (attachmentIds && attachmentIds.length > 6) {
+      return reply.code(400).send({ error: 'Maximum 6 attachments per message' });
+    }
+    if (parentMessageId) {
+      const parent = messages.get(parentMessageId);
+      if (!parent || parent.agentId !== agentId) {
+        return reply.code(400).send({ error: 'Invalid parentMessageId' });
+      }
+    }
 
     const attachments =
       attachmentIds
@@ -44,11 +54,19 @@ export function registerChatRoutes(
     };
 
     const ac = new AbortController();
-    req.raw.on('close', () => ac.abort());
+    // IncomingMessage emits `close` once the request body/socket lifecycle is
+    // complete, which can happen immediately after Fastify parses the POST and
+    // would abort every streaming response. Abort only on a real client abort
+    // or when the outgoing response closes before it finished.
+    req.raw.on('aborted', () => ac.abort());
+    reply.raw.on('close', () => {
+      if (!reply.raw.writableEnded) ac.abort();
+    });
 
     try {
       await runAgentChat(agent, message.trim(), model, write, loopDeps, ac.signal, {
         attachments,
+        parentMessageId,
       });
     } catch (e) {
       write('error', { message: e instanceof Error ? e.message : String(e) });
@@ -102,7 +120,10 @@ export function registerChatRoutes(
     };
     const agent = agents.get(agentId)!;
     const ac = new AbortController();
-    req.raw.on('close', () => ac.abort());
+    req.raw.on('aborted', () => ac.abort());
+    reply.raw.on('close', () => {
+      if (!reply.raw.writableEnded) ac.abort();
+    });
     try {
       await runAgentChat(
         agent,
@@ -127,6 +148,19 @@ export function registerChatRoutes(
       if (!msg) return reply.code(404).send({ error: 'Not found' });
       if (!req.body?.content?.trim()) return reply.code(400).send({ error: 'content required' });
       return messages.updateContent(req.params.id, req.body.content.trim());
+    }
+  );
+
+  app.post<{ Params: { id: string }; Body: { emoji: string } }>(
+    '/api/messages/:id/reaction',
+    async (req, reply) => {
+      const emoji = String(req.body?.emoji || '').trim();
+      if (!emoji || emoji.length > 16) {
+        return reply.code(400).send({ error: 'emoji required' });
+      }
+      const updated = messages.toggleReaction(req.params.id, emoji);
+      if (!updated) return reply.code(404).send({ error: 'Message not found' });
+      return updated;
     }
   );
 
@@ -173,9 +207,15 @@ export function registerChatRoutes(
       reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
     const ac = new AbortController();
-    req.raw.on('close', () => ac.abort());
+    req.raw.on('aborted', () => ac.abort());
+    reply.raw.on('close', () => {
+      if (!reply.raw.writableEnded) ac.abort();
+    });
     try {
-      await runAgentChat(agent, userMsg.content, model, write, loopDeps, ac.signal);
+      await runAgentChat(agent, userMsg.content, model, write, loopDeps, ac.signal, {
+        attachments: userMsg.attachments,
+        parentMessageId: userMsg.parentMessageId,
+      });
     } catch (e) {
       write('error', { message: e instanceof Error ? e.message : String(e) });
     } finally {

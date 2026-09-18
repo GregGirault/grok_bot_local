@@ -30,7 +30,7 @@ export default function SkillsPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto p-8 max-w-3xl">
+    <div className="h-full overflow-y-auto p-4 sm:p-8 max-w-3xl">
       <div className="flex items-center justify-between mb-1">
         <h1 className="text-2xl font-semibold">Skills</h1>
         <button

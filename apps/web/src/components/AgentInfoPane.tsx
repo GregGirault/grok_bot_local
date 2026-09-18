@@ -24,6 +24,10 @@ export default function AgentInfoPane({
   const [notify, setNotify] = useState(agent.notifyOnUpdates !== false);
   const [saved, setSaved] = useState('');
   const [newMember, setNewMember] = useState('');
+  const [computerUrl, setComputerUrl] = useState('https://example.com');
+  const [computerSelector, setComputerSelector] = useState('');
+  const [computerText, setComputerText] = useState('');
+  const [computerStatus, setComputerStatus] = useState('');
 
   useEffect(() => {
     setDraft(agent);
@@ -60,6 +64,7 @@ export default function AgentInfoPane({
       systemPrompt: draft.systemPrompt,
       avatarColor: draft.avatarColor,
       avatarShape: draft.avatarShape,
+      pinned: draft.pinned,
       notifyOnUpdates: notify,
     });
     setSaved('Saved');
@@ -75,6 +80,26 @@ export default function AgentInfoPane({
     setNewMember('');
   };
 
+  const computerAction = async (
+    body: Parameters<typeof api.computerAction>[0]
+  ) => {
+    setComputerStatus('Running…');
+    try {
+      const result = await api.computerAction(body);
+      setComputerStatus(
+        typeof result.error === 'string'
+          ? result.error
+          : typeof result.url === 'string'
+            ? result.url
+            : 'Done'
+      );
+      const p = await api.computerPreview();
+      if (p.url) setPreviewUrl(p.url);
+    } catch (e) {
+      setComputerStatus(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const tabs = [
     { id: 'computer' as const, label: 'Computer' },
     { id: 'routines' as const, label: 'Routines' },
@@ -85,7 +110,7 @@ export default function AgentInfoPane({
 
   return (
     <aside
-      className="w-80 shrink-0 border-l flex flex-col h-full"
+      className="fixed inset-0 z-50 flex h-full w-full shrink-0 flex-col border-l md:static md:z-auto md:w-80"
       style={{ borderColor: 'var(--gb-border)', background: 'var(--gb-panel)' }}
     >
       <div
@@ -153,8 +178,62 @@ export default function AgentInfoPane({
               )}
             </div>
             <p className="text-xs" style={{ color: 'var(--gb-muted)' }}>
-              Live preview refreshes every 3s from Playwright page or placeholder capture.
+              Persistent local Chromium profile. Live preview refreshes every 3s.
             </p>
+            <div className="space-y-2 rounded-xl border p-3" style={{ borderColor: 'var(--gb-border)' }}>
+              <div className="text-xs font-medium">Manual computer control</div>
+              <div className="flex gap-1.5">
+                <input
+                  value={computerUrl}
+                  onChange={(e) => setComputerUrl(e.target.value)}
+                  placeholder="https://…"
+                  className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-[11px]"
+                />
+                <button
+                  type="button"
+                  onClick={() => void computerAction({ action: 'navigate', url: computerUrl })}
+                  className="rounded-lg bg-zinc-800 px-2 py-1.5 text-[11px]"
+                >
+                  Go
+                </button>
+              </div>
+              <input
+                value={computerSelector}
+                onChange={(e) => setComputerSelector(e.target.value)}
+                placeholder="CSS · text=Label · role=button|Name"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-[11px] font-mono"
+              />
+              <div className="flex gap-1.5">
+                <input
+                  value={computerText}
+                  onChange={(e) => setComputerText(e.target.value)}
+                  placeholder="Text to type"
+                  className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-[11px]"
+                />
+                <button
+                  type="button"
+                  disabled={!computerSelector.trim()}
+                  onClick={() => void computerAction({ action: 'click', selector: computerSelector })}
+                  className="rounded-lg bg-zinc-800 px-2 py-1.5 text-[11px] disabled:opacity-40"
+                >
+                  Click
+                </button>
+                <button
+                  type="button"
+                  disabled={!computerSelector.trim()}
+                  onClick={() => void computerAction({ action: 'type', selector: computerSelector, text: computerText })}
+                  className="rounded-lg bg-zinc-800 px-2 py-1.5 text-[11px] disabled:opacity-40"
+                >
+                  Type
+                </button>
+              </div>
+              <div className="flex gap-1.5">
+                <button type="button" onClick={() => void computerAction({ action: 'press', key: 'Enter' })} className="rounded-lg bg-zinc-800 px-2 py-1 text-[10px]">Enter</button>
+                <button type="button" onClick={() => void computerAction({ action: 'press', key: 'Escape' })} className="rounded-lg bg-zinc-800 px-2 py-1 text-[10px]">Esc</button>
+                <button type="button" onClick={() => void computerAction({ action: 'snapshot' })} className="rounded-lg bg-zinc-800 px-2 py-1 text-[10px]">Snapshot</button>
+              </div>
+              {computerStatus && <div className="break-all text-[10px]" style={{ color: 'var(--gb-muted)' }}>{computerStatus}</div>}
+            </div>
           </div>
         )}
 
@@ -309,6 +388,14 @@ export default function AgentInfoPane({
                 <option value="blob">blob</option>
                 <option value="pebble">pebble</option>
               </select>
+            </label>
+            <label className="flex items-center gap-2 text-[12px]">
+              <input
+                type="checkbox"
+                checked={Boolean(draft.pinned)}
+                onChange={(e) => setDraft({ ...draft, pinned: e.target.checked })}
+              />
+              Pin Bot in sidebar
             </label>
             <label className="flex items-center gap-2 text-[12px]">
               <input

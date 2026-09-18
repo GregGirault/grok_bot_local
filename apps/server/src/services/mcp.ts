@@ -12,6 +12,7 @@ export interface McpServerEntry {
   command?: string;
   args?: string[];
   url?: string;
+  headers?: Record<string, string>;
   env?: Record<string, string>;
   disabled?: boolean;
   tools?: Array<{
@@ -64,9 +65,11 @@ class StdioMcpClient {
     if (this.ready) return this.ready;
     this.ready = new Promise((resolve, reject) => {
       try {
-        const args = (this.entry.args ?? []).map((a) =>
-          path.isAbsolute(a) ? a : path.resolve(this.projectRoot, a)
-        );
+        const args = (this.entry.args ?? []).map((a) => {
+          if (path.isAbsolute(a) || a.startsWith('-')) return a;
+          const candidate = path.resolve(this.projectRoot, a);
+          return fs.existsSync(candidate) ? candidate : a;
+        });
         this.proc = spawn(this.entry.command!, args, {
           cwd: this.projectRoot,
           env: { ...process.env, ...(this.entry.env || {}) },
@@ -196,7 +199,94 @@ class StdioMcpClient {
 }
 
 const clients = new Map<string, StdioMcpClient>();
+const remoteClients = new Map<string, RemoteMcpClient>();
 let mcpProjectRoot = '';
+
+class RemoteMcpClient {
+  private nextId = 1;
+  private sessionId = '';
+  private initialized = false;
+  liveTools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }> = [];
+
+  constructor(private entry: McpServerEntry) {}
+
+  private async parseResponse(res: Response): Promise<unknown> {
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`MCP HTTP ${res.status}: ${body.slice(0, 500)}`);
+    }
+    const session = res.headers.get('mcp-session-id');
+    if (session) this.sessionId = session;
+    const contentType = res.headers.get('content-type') || '';
+    const text = await res.text();
+    if (!text.trim()) return {};
+    if (contentType.includes('text/event-stream')) {
+      for (const block of text.split(/\n\n+/)) {
+        const data = block
+          .split('\n')
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trim())
+          .join('\n');
+        if (!data || data === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(data) as { result?: unknown; error?: { message?: string } };
+          if (parsed.error) throw new Error(parsed.error.message || 'Remote MCP error');
+          if ('result' in parsed) return parsed.result;
+        } catch (e) {
+          if (e instanceof SyntaxError) continue;
+          throw e;
+        }
+      }
+      return {};
+    }
+    const parsed = JSON.parse(text) as { result?: unknown; error?: { message?: string } };
+    if (parsed.error) throw new Error(parsed.error.message || 'Remote MCP error');
+    return parsed.result;
+  }
+
+  private async rpc(method: string, params: unknown, notification = false): Promise<unknown> {
+    if (!this.entry.url) throw new Error(`MCP server ${this.entry.name} has no URL`);
+    const payload: Record<string, unknown> = { jsonrpc: '2.0', method, params };
+    if (!notification) payload.id = this.nextId++;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      ...(this.entry.headers || {}),
+    };
+    if (this.sessionId) headers['Mcp-Session-Id'] = this.sessionId;
+    const res = await fetch(this.entry.url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (notification) {
+      if (!res.ok) throw new Error(`MCP notification HTTP ${res.status}`);
+      return {};
+    }
+    return this.parseResponse(res);
+  }
+
+  async start(): Promise<void> {
+    if (this.initialized) return;
+    await this.rpc('initialize', {
+      protocolVersion: '2025-03-26',
+      capabilities: {},
+      clientInfo: { name: 'grok-bot-local', version: '0.4.0' },
+    });
+    await this.rpc('notifications/initialized', {}, true).catch(() => undefined);
+    const listed = (await this.rpc('tools/list', {})) as {
+      tools?: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>;
+    };
+    this.liveTools = listed?.tools || [];
+    this.initialized = true;
+  }
+
+  async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+    await this.start();
+    return this.rpc('tools/call', { name, arguments: args });
+  }
+}
 
 export function loadMcpConfig(projectRoot: string): LoadedMcp {
   mcpProjectRoot = projectRoot;
@@ -267,6 +357,28 @@ export function loadMcpConfig(projectRoot: string): LoadedMcp {
           }
         })
         .catch((e) => console.warn(`[mcp] start ${server.name} failed:`, e));
+    } else if (server.url) {
+      void ensureRemoteClient(server)
+        .then((client) => {
+          for (const t of client.liveTools) {
+            const fullName = `mcp_${server.name}_${t.name}`.replace(/[^a-zA-Z0-9_]/g, '_');
+            if (!toolDefs.find((d) => d.function.name === fullName)) {
+              toolDefs.push({
+                type: 'function',
+                function: {
+                  name: fullName,
+                  description: t.description || `MCP ${t.name}`,
+                  parameters: (t.inputSchema as ToolDef['function']['parameters']) || {
+                    type: 'object',
+                    properties: {},
+                    required: [],
+                  },
+                },
+              });
+            }
+          }
+        })
+        .catch((e) => console.warn(`[mcp] remote ${server.name} failed:`, e));
     }
   }
 
@@ -282,6 +394,16 @@ async function ensureClient(entry: McpServerEntry): Promise<StdioMcpClient> {
   if (!c) {
     c = new StdioMcpClient(entry, mcpProjectRoot, (m) => console.log(m));
     clients.set(entry.name, c);
+  }
+  await c.start();
+  return c;
+}
+
+async function ensureRemoteClient(entry: McpServerEntry): Promise<RemoteMcpClient> {
+  let c = remoteClients.get(entry.name);
+  if (!c) {
+    c = new RemoteMcpClient(entry);
+    remoteClients.set(entry.name, c);
   }
   await c.start();
   return c;
@@ -334,6 +456,23 @@ export async function executeMcpTool(
     }
   }
 
+  if (server?.url) {
+    try {
+      const client = await ensureRemoteClient(server);
+      const result = await client.callTool(shortTool, args);
+      return JSON.stringify({ ok: true, live: true, transport: 'http', tool: toolName, result });
+    } catch (e) {
+      return JSON.stringify({
+        ok: false,
+        live: false,
+        transport: 'http',
+        tool: toolName,
+        error: e instanceof Error ? e.message : String(e),
+        args,
+      });
+    }
+  }
+
   // Built-in echo fallback for demo / url-only servers
   if (shortTool === 'echo' || shortTool === 'ping') {
     return JSON.stringify({
@@ -367,6 +506,7 @@ export function saveMcpConfig(projectRoot: string, config: McpConfig): void {
   // Restart clients for changed servers
   for (const c of clients.values()) c.stop();
   clients.clear();
+  remoteClients.clear();
 }
 
 export function getMcpConfigRaw(projectRoot: string): McpConfig {

@@ -50,7 +50,7 @@ export default function MemoryPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto p-8 max-w-3xl">
+    <div className="h-full overflow-y-auto p-4 sm:p-8 max-w-3xl">
       <h1 className="text-2xl font-semibold mb-1">Memory</h1>
       <p className="text-sm mb-6" style={{ color: 'var(--gb-muted)' }}>
         Tiers · pin→profile · user-global · auto note→log after 7 days

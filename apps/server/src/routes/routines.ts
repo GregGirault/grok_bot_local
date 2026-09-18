@@ -28,8 +28,14 @@ export function registerRoutineRoutes(
     if (!agents.get(body.agentId)) {
       return reply.code(404).send({ error: 'Agent not found' });
     }
+    if (routines.list(body.agentId).length >= 50) {
+      return reply.code(409).send({ error: 'Maximum 50 routines per agent' });
+    }
     if (!cron.validate(body.cron)) {
       return reply.code(400).send({ error: 'Invalid cron expression' });
+    }
+    if (body.timezone && !isValidTimezone(body.timezone)) {
+      return reply.code(400).send({ error: 'Invalid IANA timezone' });
     }
     const created = routines.create(body);
     scheduler.reload();
@@ -44,10 +50,14 @@ export function registerRoutineRoutes(
       prompt: string;
       enabled: boolean;
       quietIfEmpty: boolean;
+      timezone: string;
     }>;
   }>('/api/routines/:id', async (req, reply) => {
     if (req.body?.cron && !cron.validate(req.body.cron)) {
       return reply.code(400).send({ error: 'Invalid cron expression' });
+    }
+    if (req.body?.timezone && !isValidTimezone(req.body.timezone)) {
+      return reply.code(400).send({ error: 'Invalid IANA timezone' });
     }
     const updated = routines.update(req.params.id, req.body ?? {});
     if (!updated) return reply.code(404).send({ error: 'Routine not found' });
@@ -66,7 +76,9 @@ export function registerRoutineRoutes(
   app.post<{ Params: { id: string } }>('/api/routines/:id/run', async (req, reply) => {
     const r = routines.get(req.params.id);
     if (!r) return reply.code(404).send({ error: 'Routine not found' });
-    void scheduler.runRoutine(r.id);
+    // "Run now" is an explicit user action and must work even while the
+    // recurring schedule is paused/disabled.
+    void scheduler.runRoutine(r.id, { force: true });
     return { ok: true, message: 'Routine started' };
   });
 
@@ -88,4 +100,13 @@ export function registerRoutineRoutes(
     void scheduler.runRoutine(r.id);
     return { ok: true, triggered: r.id, name: r.name };
   });
+}
+
+function isValidTimezone(timezone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
 }

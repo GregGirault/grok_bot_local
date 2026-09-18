@@ -3,6 +3,7 @@ import fs from 'fs';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
+import multipart from '@fastify/multipart';
 import { openDatabase } from './db/schema';
 import {
   AgentRepo,
@@ -18,6 +19,7 @@ import {
   ProjectRepo,
   ApprovalRepo,
   UploadRepo,
+  SearchRepo,
 } from './db/repos';
 import { registerAgentRoutes } from './routes/agents';
 import { registerChatRoutes } from './routes/chat';
@@ -78,6 +80,7 @@ async function main() {
   const projects = new ProjectRepo(db);
   const approvals = new ApprovalRepo(db);
   const uploads = new UploadRepo(db);
+  const search = new SearchRepo(db);
 
   const current = settings.getAll();
   if (!current.workspaceRoot) {
@@ -114,6 +117,13 @@ async function main() {
 
   const app = Fastify({ logger: true, bodyLimit: 25 * 1024 * 1024 });
   await app.register(cors, { origin: true });
+  await app.register(multipart, {
+    limits: {
+      files: 1,
+      fileSize: 200 * 1024 * 1024,
+      fields: 10,
+    },
+  });
 
   // Serve screenshots / uploads
   await app.register(fastifyStatic, {
@@ -127,6 +137,20 @@ async function main() {
     decorateReply: false,
   });
 
+  // Production UI: serve the built React app from the same origin as the API.
+  // This also makes the Electron production wrapper and mobile/PWA clients work
+  // without a separate Vite process.
+  const webDist = path.join(projectRoot, 'apps', 'web', 'dist');
+  const webIndex = path.join(webDist, 'index.html');
+  if (fs.existsSync(webIndex)) {
+    await app.register(fastifyStatic, {
+      root: webDist,
+      prefix: '/',
+      decorateReply: false,
+      wildcard: false,
+    });
+  }
+
   registerAgentRoutes(app, agents, messages, memory, inbox);
   registerChatRoutes(app, agents, messages, loopDeps, uploads, dataDir);
   registerSettingsRoutes(app, settings, skillsDir, VERSION, () => mcp, projectRoot, (m) => {
@@ -134,7 +158,7 @@ async function main() {
     loopDeps.mcp = m;
   });
   registerRoutineRoutes(app, routines, agents, scheduler);
-  registerChannelRoutes(app, channels, agents, inbox, messages);
+  registerChannelRoutes(app, channels, agents, inbox, messages, loopDeps);
   registerTaskRoutes(app, tasks, agents, taskRunner);
   registerMemoryRoutes(app, memory, agents);
   registerExtraRoutes(app, {
@@ -147,6 +171,7 @@ async function main() {
     messages,
     memory,
     uploads,
+    search,
     dataDir,
     version: VERSION,
     settings,
@@ -159,6 +184,20 @@ async function main() {
   });
 
   app.get('/api/version', async () => ({ version: VERSION }));
+
+  if (fs.existsSync(webIndex)) {
+    app.setNotFoundHandler(async (req, reply) => {
+      if (
+        req.method === 'GET' &&
+        !req.url.startsWith('/api/') &&
+        !req.url.startsWith('/uploads/') &&
+        !req.url.startsWith('/screenshots/')
+      ) {
+        return reply.type('text/html; charset=utf-8').send(fs.readFileSync(webIndex, 'utf-8'));
+      }
+      return reply.code(404).send({ error: 'Not found' });
+    });
+  }
 
   await app.listen({ port: PORT, host: HOST });
   scheduler.start();

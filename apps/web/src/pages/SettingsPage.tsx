@@ -25,19 +25,19 @@ export default function SettingsPage({
   ];
 
   return (
-    <div className="h-full flex">
+    <div className="h-full flex flex-col sm:flex-row">
       <div
-        className="w-44 shrink-0 border-r p-3"
+        className="w-full shrink-0 border-b p-2 sm:w-44 sm:border-b-0 sm:border-r sm:p-3"
         style={{ borderColor: 'var(--gb-border)', background: 'var(--gb-panel)' }}
       >
-        <h1 className="text-[13px] font-semibold px-2 mb-3">{t(lang, 'settings')}</h1>
-        <nav className="space-y-0.5">
+        <h1 className="hidden sm:block text-[13px] font-semibold px-2 mb-3">{t(lang, 'settings')}</h1>
+        <nav className="flex gap-1 overflow-x-auto sm:block sm:space-y-0.5">
           {TABS.map((tab) => (
             <NavLink
               key={tab.to}
               to={tab.to}
               className={({ isActive }) =>
-                `block rounded-md px-2.5 py-1.5 text-[12px] ${
+                `block shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-[12px] ${
                   isActive ? 'bg-zinc-800 text-white' : 'hover:bg-zinc-900'
                 }`
               }
@@ -47,7 +47,7 @@ export default function SettingsPage({
             </NavLink>
           ))}
         </nav>
-        <p className="text-[10px] px-2 mt-4" style={{ color: 'var(--gb-muted)' }}>
+        <p className="hidden sm:block text-[10px] px-2 mt-4" style={{ color: 'var(--gb-muted)' }}>
           Ctrl/, to open
         </p>
       </div>
@@ -94,7 +94,7 @@ function GeneralPane({
   };
 
   return (
-    <div className="p-6 max-w-xl space-y-5">
+    <div className="p-4 sm:p-6 max-w-xl space-y-5">
       <h2 className="text-base font-semibold">{t(lang, 'general')}</h2>
       <label className="block text-[12px]" style={{ color: 'var(--gb-muted)' }}>
         {t(lang, 'theme')}
@@ -166,7 +166,7 @@ function ComputerPane() {
   }, []);
 
   return (
-    <div className="p-6 max-w-xl space-y-4">
+    <div className="p-4 sm:p-6 max-w-xl space-y-4">
       <h2 className="text-base font-semibold">Computer</h2>
       <p className="text-[12px]" style={{ color: 'var(--gb-muted)' }}>
         Registered machines for computer use / copy_to_workspace tools.
@@ -240,6 +240,7 @@ function ConnectionPane({
   const [form, setForm] = useState<Settings | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [status, setStatus] = useState('');
+  const [network, setNetwork] = useState<Awaited<ReturnType<typeof api.networkInfo>> | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -250,13 +251,14 @@ function ConnectionPane({
       } catch {
         setModels([]);
       }
+      setNetwork(await api.networkInfo().catch(() => null));
     })();
   }, []);
 
   if (!form) return <div className="p-6 text-sm" style={{ color: 'var(--gb-muted)' }}>Loading…</div>;
 
   return (
-    <div className="p-6 max-w-xl space-y-4">
+    <div className="p-4 sm:p-6 max-w-xl space-y-4">
       <h2 className="text-base font-semibold">Connection</h2>
       <label className="block text-[12px]" style={{ color: 'var(--gb-muted)' }}>
         Ollama base URL
@@ -301,6 +303,74 @@ function ConnectionPane({
           }
         />
       </label>
+      <label className="block text-[12px]" style={{ color: 'var(--gb-muted)' }}>
+        Default timezone
+        <input
+          className="mt-1 w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm font-mono"
+          value={form.timezone || ''}
+          onChange={(e) => setForm({ ...form, timezone: e.target.value })}
+          placeholder="Europe/Paris"
+        />
+      </label>
+      <label className="block text-[12px]" style={{ color: 'var(--gb-muted)' }}>
+        Local shell execution
+        <select
+          className="mt-1 w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm"
+          value={form.localExecutionPolicy || 'ask'}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              localExecutionPolicy: e.target.value as Settings['localExecutionPolicy'],
+            })
+          }
+        >
+          <option value="ask">Ask every time</option>
+          <option value="always">Always allow</option>
+          <option value="never">Never allow</option>
+        </select>
+      </label>
+      <label className="flex items-center gap-2 text-[12px]">
+        <input
+          type="checkbox"
+          checked={form.autoReviewEnabled !== false}
+          onChange={(e) => setForm({ ...form, autoReviewEnabled: e.target.checked })}
+        />
+        Auto Review dangerous shell commands
+      </label>
+      <label className="block text-[12px]" style={{ color: 'var(--gb-muted)' }}>
+        Always ask rules · one regex or substring per line
+        <textarea
+          rows={3}
+          className="mt-1 w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-xs font-mono"
+          value={(form.autoReviewAskPatterns || []).join('\n')}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              autoReviewAskPatterns: e.target.value
+                .split('\n')
+                .map((x) => x.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+      </label>
+      <label className="block text-[12px]" style={{ color: 'var(--gb-muted)' }}>
+        Always allow rules · one regex or substring per line
+        <textarea
+          rows={3}
+          className="mt-1 w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-xs font-mono"
+          value={(form.autoReviewAllowPatterns || []).join('\n')}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              autoReviewAllowPatterns: e.target.value
+                .split('\n')
+                .map((x) => x.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+      </label>
       <div className="flex items-center gap-3">
         <button
           onClick={async () => {
@@ -324,6 +394,21 @@ function ConnectionPane({
           <span className="text-amber-400">{health?.ollama?.error || 'unreachable'}</span>
         )}
       </div>
+      <div className="rounded-xl border p-3 text-[11px] space-y-1" style={{ borderColor: 'var(--gb-border)' }}>
+        <div className="font-medium text-xs text-zinc-200">Mobile access</div>
+        {network?.lanEnabled ? (
+          <>
+            <div>Server is listening on the LAN.</div>
+            {network.urls.map((url) => (
+              <div key={url} className="font-mono break-all text-cyan-400">{url}</div>
+            ))}
+          </>
+        ) : (
+          <div>
+            Start with <code className="text-zinc-200">npm run start:lan</code> after building to expose this UI to phones on the same network.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -344,7 +429,7 @@ function ConnectorsPane() {
   }, []);
 
   return (
-    <div className="p-6 max-w-2xl space-y-4">
+    <div className="p-4 sm:p-6 max-w-2xl space-y-4">
       <h2 className="text-base font-semibold">MCP Connectors</h2>
       <p className="text-[12px]" style={{ color: 'var(--gb-muted)' }}>
         Enable/disable servers and edit <code>config/mcp.json</code> via the UI.
@@ -421,7 +506,7 @@ function TasksPane() {
   }, []);
 
   return (
-    <div className="p-6 max-w-xl space-y-4">
+    <div className="p-4 sm:p-6 max-w-xl space-y-4">
       <h2 className="text-base font-semibold">Background tasks</h2>
       <div className="flex flex-wrap gap-2">
         <select
@@ -489,7 +574,7 @@ function UpdatesPane({ health }: { health: HealthStatus | null }) {
   const [checking, setChecking] = useState(false);
 
   return (
-    <div className="p-6 max-w-xl space-y-4">
+    <div className="p-4 sm:p-6 max-w-xl space-y-4">
       <h2 className="text-base font-semibold">Updates</h2>
       <div
         className="rounded-xl border px-4 py-5"

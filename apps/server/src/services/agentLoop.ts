@@ -45,6 +45,7 @@ export async function runAgentChat(
     attachments?: AttachmentInfo[];
     skipPersistUser?: boolean;
     quietChat?: boolean;
+    parentMessageId?: string;
   }
 ): Promise<void> {
   const settings = deps.settings.getAll();
@@ -69,6 +70,7 @@ export async function runAgentChat(
       role: 'user',
       content,
       attachments: opts?.attachments,
+      parentMessageId: opts?.parentMessageId,
     });
   }
 
@@ -110,6 +112,7 @@ export async function runAgentChat(
     machines: deps.machines,
     approvals: deps.approvals,
     mcp: deps.mcp,
+    settings,
     spawnTask: deps.spawnTask,
     onWidget: (widget) => {
       write('widget', widget);

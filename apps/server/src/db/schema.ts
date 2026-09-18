@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS agents (
   avatar_color TEXT NOT NULL DEFAULT '#8b5cf6',
   avatar_shape TEXT NOT NULL DEFAULT 'circle',
   hidden INTEGER NOT NULL DEFAULT 0,
+  pinned INTEGER NOT NULL DEFAULT 0,
   notify_on_updates INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -30,6 +31,8 @@ CREATE TABLE IF NOT EXISTS messages (
   tool_name TEXT,
   tool_call_id TEXT,
   attachments TEXT,
+  parent_message_id TEXT,
+  reactions TEXT,
   edited_at TEXT,
   created_at TEXT NOT NULL,
   FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
@@ -58,6 +61,7 @@ CREATE TABLE IF NOT EXISTS routines (
   prompt TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,
   quiet_if_empty INTEGER NOT NULL DEFAULT 0,
+  timezone TEXT,
   webhook_token TEXT,
   last_run_at TEXT,
   created_at TEXT NOT NULL,
@@ -94,6 +98,7 @@ CREATE TABLE IF NOT EXISTS channels (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
   description TEXT NOT NULL DEFAULT '',
+  pinned INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 
@@ -110,6 +115,8 @@ CREATE TABLE IF NOT EXISTS channel_messages (
   channel_id TEXT NOT NULL,
   from_agent_id TEXT,
   content TEXT NOT NULL,
+  reply_to_id TEXT,
+  reactions TEXT,
   created_at TEXT NOT NULL,
   FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
 );
@@ -201,6 +208,9 @@ function migrate(db: Db): void {
   if (!hasColumn(db, 'agents', 'notify_on_updates')) {
     db.exec(`ALTER TABLE agents ADD COLUMN notify_on_updates INTEGER NOT NULL DEFAULT 1`);
   }
+  if (!hasColumn(db, 'agents', 'pinned')) {
+    db.exec(`ALTER TABLE agents ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`);
+  }
   if (!hasColumn(db, 'messages', 'kind')) {
     db.exec(`ALTER TABLE messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'text'`);
   }
@@ -212,6 +222,12 @@ function migrate(db: Db): void {
   }
   if (!hasColumn(db, 'messages', 'edited_at')) {
     db.exec(`ALTER TABLE messages ADD COLUMN edited_at TEXT`);
+  }
+  if (!hasColumn(db, 'messages', 'parent_message_id')) {
+    db.exec(`ALTER TABLE messages ADD COLUMN parent_message_id TEXT`);
+  }
+  if (!hasColumn(db, 'messages', 'reactions')) {
+    db.exec(`ALTER TABLE messages ADD COLUMN reactions TEXT`);
   }
   if (!hasColumn(db, 'memory', 'tier')) {
     db.exec(`ALTER TABLE memory ADD COLUMN tier TEXT NOT NULL DEFAULT 'note'`);
@@ -231,12 +247,27 @@ function migrate(db: Db): void {
   if (!hasColumn(db, 'routines', 'webhook_token')) {
     db.exec(`ALTER TABLE routines ADD COLUMN webhook_token TEXT`);
   }
+  if (!hasColumn(db, 'routines', 'timezone')) {
+    db.exec(`ALTER TABLE routines ADD COLUMN timezone TEXT`);
+  }
+  if (!hasColumn(db, 'channels', 'pinned')) {
+    db.exec(`ALTER TABLE channels ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!hasColumn(db, 'channel_messages', 'reply_to_id')) {
+    db.exec(`ALTER TABLE channel_messages ADD COLUMN reply_to_id TEXT`);
+  }
+  if (!hasColumn(db, 'channel_messages', 'reactions')) {
+    db.exec(`ALTER TABLE channel_messages ADD COLUMN reactions TEXT`);
+  }
   if (!hasColumn(db, 'tasks', 'parent_task_id')) {
     db.exec(`ALTER TABLE tasks ADD COLUMN parent_task_id TEXT`);
   }
   if (!hasColumn(db, 'tasks', 'post_to_chat')) {
     db.exec(`ALTER TABLE tasks ADD COLUMN post_to_chat INTEGER NOT NULL DEFAULT 1`);
   }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_agent_created ON messages(agent_id, created_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_channel_messages_channel_created ON channel_messages(channel_id, created_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_routine_runs_routine_created ON routine_runs(routine_id, created_at)`);
 }
 
 export function openDatabase(dataDir: string): Db {
@@ -256,8 +287,8 @@ function seedDefaults(db: Db): void {
   const existing = db.prepare('SELECT id FROM agents WHERE name = ?').get('dev');
   if (!existing) {
     db.prepare(
-      `INSERT INTO agents (id, name, title, description, system_prompt, avatar_color, avatar_shape, hidden, notify_on_updates, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`
+      `INSERT INTO agents (id, name, title, description, system_prompt, avatar_color, avatar_shape, hidden, pinned, notify_on_updates, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?)`
     ).run(
       uuid(),
       'dev',
@@ -283,6 +314,11 @@ When editing code, explain briefly what you changed.`,
     accentColor: '#8b5cf6',
     taskConcurrency: '2',
     githubRepo: 'GregGirault/grok_bot_local',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    localExecutionPolicy: 'ask',
+    autoReviewEnabled: 'true',
+    autoReviewAskPatterns: '[]',
+    autoReviewAllowPatterns: '[]',
   };
   const upsert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   for (const [k, v] of Object.entries(defaults)) {

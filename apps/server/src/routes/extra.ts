@@ -1,5 +1,7 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
+import { pipeline } from 'stream/promises';
 import type { FastifyInstance } from 'fastify';
 import type {
   MachineRepo,
@@ -11,9 +13,17 @@ import type {
   MessageRepo,
   MemoryRepo,
   UploadRepo,
+  SearchRepo,
   SettingsRepo,
 } from '../db/repos';
-import { captureDesktopPreview } from '../services/browser';
+import {
+  captureDesktopPreview,
+  browserNavigate,
+  browserClick,
+  browserType,
+  browserPress,
+  browserSnapshot,
+} from '../services/browser';
 import { runShell, type ToolContext } from '../tools';
 import { getMcpConfigRaw, saveMcpConfig, loadMcpConfig, type LoadedMcp } from '../services/mcp';
 
@@ -29,6 +39,7 @@ export function registerExtraRoutes(
     messages: MessageRepo;
     memory: MemoryRepo;
     uploads: UploadRepo;
+    search: SearchRepo;
     dataDir: string;
     version: string;
     settings: SettingsRepo;
@@ -46,12 +57,40 @@ export function registerExtraRoutes(
     messages,
     memory,
     uploads,
+    search,
     dataDir,
     version,
     settings,
     projectRoot,
     reloadMcp,
   } = deps;
+
+  // —— Global search ——
+  app.get('/api/search', async (req, reply) => {
+    const { q, limit } = req.query as { q?: string; limit?: string };
+    const query = String(q || '').trim();
+    if (query.length < 2) return reply.code(400).send({ error: 'Search query must be at least 2 characters' });
+    const n = Math.max(1, Math.min(100, Number(limit) || 50));
+    return search.search(query, n);
+  });
+
+  // —— Local/mobile access ——
+  app.get('/api/network', async (req) => {
+    const port = Number(process.env.PORT || 8787);
+    const addresses: string[] = [];
+    for (const entries of Object.values(os.networkInterfaces())) {
+      for (const entry of entries || []) {
+        if (entry.family === 'IPv4' && !entry.internal) addresses.push(entry.address);
+      }
+    }
+    return {
+      bindHost: process.env.HOST || '127.0.0.1',
+      port,
+      lanEnabled: (process.env.HOST || '127.0.0.1') === '0.0.0.0',
+      urls: [...new Set(addresses)].map((address) => `http://${address}:${port}`),
+      requestHost: req.headers.host,
+    };
+  });
 
   // —— Machines ——
   app.get('/api/machines', async () => machines.list());
@@ -105,6 +144,9 @@ export function registerExtraRoutes(
       if (!ch) return reply.code(404).send({ error: 'Channel not found' });
       if (req.body?.agentId) {
         if (!agents.get(req.body.agentId)) return reply.code(404).send({ error: 'Agent not found' });
+        if (!ch.memberIds.includes(req.body.agentId) && ch.memberIds.length >= 6) {
+          return reply.code(409).send({ error: 'Group chats support at most 6 Bots' });
+        }
         channels.addMember(req.params.id, req.body.agentId);
       }
       if (req.body?.memberId) {
@@ -220,8 +262,95 @@ export function registerExtraRoutes(
       path: file,
     };
   });
+  app.post<{
+    Body:
+      | { action: 'navigate'; url: string }
+      | { action: 'click'; selector: string }
+      | { action: 'type'; selector: string; text: string; pressEnter?: boolean }
+      | { action: 'press'; key: string }
+      | { action: 'snapshot' };
+  }>('/api/computer/action', async (req, reply) => {
+    const body = req.body;
+    if (!body?.action) return reply.code(400).send({ error: 'action required' });
+    let raw: string;
+    switch (body.action) {
+      case 'navigate':
+        raw = await browserNavigate(body.url);
+        break;
+      case 'click':
+        raw = await browserClick(body.selector);
+        break;
+      case 'type':
+        raw = await browserType(body.selector, body.text, { pressEnter: Boolean(body.pressEnter) });
+        break;
+      case 'press':
+        raw = await browserPress(body.key);
+        break;
+      case 'snapshot':
+        raw = await browserSnapshot();
+        break;
+      default:
+        return reply.code(400).send({ error: 'unsupported action' });
+    }
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      return { ok: true, result: raw };
+    }
+  });
 
   // —— Uploads ——
+  app.post('/api/uploads/file', async (req, reply) => {
+    const agentId = (req.query as { agentId?: string }).agentId;
+    if (agentId && !agents.get(agentId)) {
+      return reply.code(404).send({ error: 'Agent not found' });
+    }
+
+    let part;
+    try {
+      part = await req.file();
+    } catch (e) {
+      return reply.code(413).send({
+        error: e instanceof Error ? e.message : 'Upload failed',
+      });
+    }
+    if (!part) return reply.code(400).send({ error: 'file required' });
+
+    const safe = path.basename(part.filename || 'attachment').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safe}`;
+    const full = path.join(dataDir, 'uploads', fileName);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+
+    let size = 0;
+    part.file.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+    });
+    try {
+      await pipeline(part.file, fs.createWriteStream(full));
+    } catch (e) {
+      fs.rmSync(full, { force: true });
+      return reply.code(413).send({
+        error: e instanceof Error ? e.message : 'Upload stream failed',
+      });
+    }
+
+    const isVideo = part.mimetype?.startsWith('video/') || /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(safe);
+    const maxBytes = isVideo ? 200 * 1024 * 1024 : 25 * 1024 * 1024;
+    if (part.file.truncated || size > maxBytes) {
+      fs.rmSync(full, { force: true });
+      return reply.code(413).send({
+        error: `File exceeds ${isVideo ? '200 MB video' : '25 MB'} limit`,
+      });
+    }
+
+    const att = uploads.create(part.filename || safe, full, {
+      agentId,
+      mime: part.mimetype,
+      size,
+    });
+    return reply.code(201).send({ ...att, url: `/uploads/${fileName}` });
+  });
+
   app.post<{
     Body: { agentId?: string; name: string; contentBase64: string; mime?: string };
   }>('/api/uploads', async (req, reply) => {

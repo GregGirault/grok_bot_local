@@ -1,0 +1,19 @@
+{
+  "name": "Grok Bot Local",
+  "short_name": "GrokBot",
+  "description": "Local persistent AI teammates with chat, tools, memory, routines and computer use.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/grokbot-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

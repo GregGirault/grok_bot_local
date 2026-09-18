@@ -19,6 +19,7 @@ import type {
   ApprovalRequest,
   RoutineRun,
   AttachmentInfo,
+  SearchResult,
 } from '@grok-bot/shared';
 
 const BASE = '';
@@ -58,6 +59,11 @@ export const api = {
     json<ChatMessage>(`/api/messages/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ content }),
+    }),
+  reactMessage: (id: string, emoji: string) =>
+    json<ChatMessage>(`/api/messages/${id}/reaction`, {
+      method: 'POST',
+      body: JSON.stringify({ emoji }),
     }),
   listMemory: (agentId?: string, projectId?: string) => {
     const params = new URLSearchParams();
@@ -131,12 +137,22 @@ export const api = {
   listChannels: () => json<Channel[]>('/api/channels'),
   createChannel: (body: { name: string; description?: string; memberIds: string[] }) =>
     json<Channel>('/api/channels', { method: 'POST', body: JSON.stringify(body) }),
+  updateChannel: (id: string, body: Partial<Pick<Channel, 'name' | 'description' | 'pinned'>>) =>
+    json<Channel>(`/api/channels/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   listChannelMessages: (id: string) =>
     json<ChannelMessage[]>(`/api/channels/${id}/messages`),
-  postChannelMessage: (id: string, body: { content: string; fromAgentId?: string }) =>
+  postChannelMessage: (
+    id: string,
+    body: { content: string; fromAgentId?: string; replyToId?: string }
+  ) =>
     json<ChannelMessage>(`/api/channels/${id}/messages`, {
       method: 'POST',
       body: JSON.stringify(body),
+    }),
+  reactChannelMessage: (channelId: string, messageId: string, emoji: string) =>
+    json<ChannelMessage>(`/api/channels/${channelId}/messages/${messageId}/reaction`, {
+      method: 'POST',
+      body: JSON.stringify({ emoji }),
     }),
   deleteChannel: (id: string) =>
     json<{ ok: boolean }>(`/api/channels/${id}`, { method: 'DELETE' }),
@@ -209,6 +225,13 @@ export const api = {
     }),
   computerPreview: () =>
     json<{ ok: boolean; url: string | null }>('/api/computer/preview.json'),
+  computerAction: (body:
+    | { action: 'navigate'; url: string }
+    | { action: 'click'; selector: string }
+    | { action: 'type'; selector: string; text: string; pressEnter?: boolean }
+    | { action: 'press'; key: string }
+    | { action: 'snapshot' }
+  ) => json<Record<string, unknown>>('/api/computer/action', { method: 'POST', body: JSON.stringify(body) }),
   checkUpdates: () =>
     json<{
       ok: boolean;
@@ -218,21 +241,22 @@ export const api = {
       error?: string;
       source?: string;
     }>('/api/updates/check'),
+  search: (q: string, limit = 50) =>
+    json<SearchResult[]>(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+  networkInfo: () =>
+    json<{ bindHost: string; port: number; lanEnabled: boolean; urls: string[] }>('/api/network'),
   upload: async (file: File, agentId?: string): Promise<AttachmentInfo & { url?: string }> => {
-    const buf = await file.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    const contentBase64 = btoa(binary);
-    return json('/api/uploads', {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    const res = await fetch(`/api/uploads/file${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ''}`, {
       method: 'POST',
-      body: JSON.stringify({
-        agentId,
-        name: file.name,
-        contentBase64,
-        mime: file.type,
-      }),
+      body: form,
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error((err as { error?: string }).error || res.statusText);
+    }
+    return res.json() as Promise<AttachmentInfo & { url?: string }>;
   },
 };
 
@@ -317,12 +341,13 @@ export async function streamChat(
   handlers: StreamHandlers,
   model?: string,
   signal?: AbortSignal,
-  attachmentIds?: string[]
+  attachmentIds?: string[],
+  parentMessageId?: string
 ): Promise<void> {
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ agentId, message, model, attachmentIds }),
+    body: JSON.stringify({ agentId, message, model, attachmentIds, parentMessageId }),
     signal,
   });
   await readSse(res, handlers);

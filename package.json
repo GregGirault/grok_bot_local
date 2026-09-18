@@ -11,17 +11,28 @@
   ],
   "scripts": {
     "dev": "concurrently -n server,web -c cyan,magenta \"npm run dev -w @grok-bot/server\" \"npm run dev -w @grok-bot/web\"",
+    "dev:lan": "concurrently -n server,web -c cyan,magenta \"cross-env HOST=0.0.0.0 npm run dev -w @grok-bot/server\" \"npm run dev:lan -w @grok-bot/web\"",
     "build": "npm run build -w @grok-bot/shared && npm run build -w @grok-bot/server && npm run build -w @grok-bot/web",
     "start": "npm run start -w @grok-bot/server",
-    "typecheck": "npm run typecheck -w @grok-bot/shared && npm run typecheck -w @grok-bot/server && npm run typecheck -w @grok-bot/web",
+    "start:lan": "cross-env HOST=0.0.0.0 npm run start -w @grok-bot/server",
+    "typecheck": "npm run build -w @grok-bot/shared && npm run typecheck -w @grok-bot/server && npm run typecheck -w @grok-bot/web",
     "dev:desktop": "npm --prefix apps/desktop install && npm --prefix apps/desktop run dev",
-    "start:desktop": "GROK_BOT_DESKTOP_PROD=1 npm --prefix apps/desktop start"
+    "start:desktop": "cross-env GROK_BOT_DESKTOP_PROD=1 npm --prefix apps/desktop start",
+    "desktop": "npm run build && npm --prefix apps/desktop install && concurrently -k -s first \"wait-on http://127.0.0.1:8787/health && npm run start:desktop\" \"npm start\"",
+    "mobile": "npm run build && npm run start:lan"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
-    "typescript": "^5.7.3"
+    "cross-env": "^10.1.0",
+    "typescript": "^5.7.3",
+    "wait-on": "^9.1.0"
   },
   "engines": {
     "node": ">=20"
+  },
+  "allowScripts": {
+    "better-sqlite3@13.0.3": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.25.12": true
   }
 }

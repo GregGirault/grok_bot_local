@@ -19,6 +19,7 @@ import type {
   ApprovalRequest,
   RoutineRun,
   AttachmentInfo,
+  SearchResult,
 } from '@grok-bot/shared';
 import type { Db } from './schema';
 
@@ -57,6 +58,21 @@ function parseAttachments(raw: unknown): AttachmentInfo[] | undefined {
   return undefined;
 }
 
+function parseReactions(raw: unknown): Record<string, number> | undefined {
+  if (!raw || typeof raw !== 'string') return undefined;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const out: Record<string, number> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      const n = Number(value);
+      if (Number.isFinite(n) && n > 0) out[key] = n;
+    }
+    return Object.keys(out).length ? out : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function rowToAgent(r: Record<string, unknown>): Agent {
   return {
     id: r.id as string,
@@ -67,6 +83,7 @@ function rowToAgent(r: Record<string, unknown>): Agent {
     avatarColor: (r.avatar_color as string) || pickColor(r.name as string),
     avatarShape: ((r.avatar_shape as string) || 'circle') as Agent['avatarShape'],
     hidden: Boolean(r.hidden),
+    pinned: Boolean(r.pinned),
     notifyOnUpdates: r.notify_on_updates === undefined ? true : Boolean(r.notify_on_updates),
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
@@ -84,6 +101,8 @@ function rowToMessage(r: Record<string, unknown>): ChatMessage {
     toolName: (r.tool_name as string) || undefined,
     toolCallId: (r.tool_call_id as string) || undefined,
     attachments: parseAttachments(r.attachments),
+    parentMessageId: (r.parent_message_id as string) || undefined,
+    reactions: parseReactions(r.reactions),
     editedAt: (r.edited_at as string) || undefined,
     createdAt: r.created_at as string,
   };
@@ -113,6 +132,7 @@ function rowToRoutine(r: Record<string, unknown>): Routine {
     prompt: r.prompt as string,
     enabled: Boolean(r.enabled),
     quietIfEmpty: Boolean(r.quiet_if_empty),
+    timezone: (r.timezone as string) || undefined,
     webhookToken: (r.webhook_token as string) || undefined,
     lastRunAt: (r.last_run_at as string) || undefined,
     createdAt: r.created_at as string,
@@ -124,8 +144,8 @@ export class AgentRepo {
 
   list(includeHidden = false): Agent[] {
     const sql = includeHidden
-      ? 'SELECT * FROM agents ORDER BY name'
-      : 'SELECT * FROM agents WHERE hidden = 0 ORDER BY name';
+      ? 'SELECT * FROM agents ORDER BY pinned DESC, name'
+      : 'SELECT * FROM agents WHERE hidden = 0 ORDER BY pinned DESC, name';
     return this.db.prepare(sql).all().map((r) => rowToAgent(r as Record<string, unknown>));
   }
 
@@ -153,8 +173,8 @@ export class AgentRepo {
     const shape = input.avatarShape || 'circle';
     this.db
       .prepare(
-        `INSERT INTO agents (id, name, title, description, system_prompt, avatar_color, avatar_shape, hidden, notify_on_updates, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
+        `INSERT INTO agents (id, name, title, description, system_prompt, avatar_color, avatar_shape, hidden, pinned, notify_on_updates, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)`
       )
       .run(
         id,
@@ -178,7 +198,7 @@ export class AgentRepo {
     this.db
       .prepare(
         `UPDATE agents SET name = ?, title = ?, description = ?, system_prompt = ?,
-         avatar_color = ?, avatar_shape = ?, hidden = ?, notify_on_updates = ?, updated_at = ? WHERE id = ?`
+         avatar_color = ?, avatar_shape = ?, hidden = ?, pinned = ?, notify_on_updates = ?, updated_at = ? WHERE id = ?`
       )
       .run(
         input.name ?? existing.name,
@@ -188,6 +208,7 @@ export class AgentRepo {
         input.avatarColor ?? existing.avatarColor,
         input.avatarShape ?? existing.avatarShape,
         input.hidden !== undefined ? (input.hidden ? 1 : 0) : existing.hidden ? 1 : 0,
+        input.pinned !== undefined ? (input.pinned ? 1 : 0) : existing.pinned ? 1 : 0,
         input.notifyOnUpdates !== undefined
           ? input.notifyOnUpdates
             ? 1
@@ -226,8 +247,8 @@ export class MessageRepo {
     const attachments = msg.attachments ? JSON.stringify(msg.attachments) : null;
     this.db
       .prepare(
-        `INSERT INTO messages (id, agent_id, role, content, kind, meta, tool_name, tool_call_id, attachments, edited_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO messages (id, agent_id, role, content, kind, meta, tool_name, tool_call_id, attachments, parent_message_id, reactions, edited_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -239,6 +260,8 @@ export class MessageRepo {
         msg.toolName ?? null,
         msg.toolCallId ?? null,
         attachments,
+        msg.parentMessageId ?? null,
+        msg.reactions ? JSON.stringify(msg.reactions) : null,
         msg.editedAt ?? null,
         createdAt
       );
@@ -252,6 +275,8 @@ export class MessageRepo {
       toolName: msg.toolName,
       toolCallId: msg.toolCallId,
       attachments: msg.attachments,
+      parentMessageId: msg.parentMessageId,
+      reactions: msg.reactions,
       editedAt: msg.editedAt,
       createdAt,
     };
@@ -273,6 +298,18 @@ export class MessageRepo {
     } else {
       this.db.prepare('UPDATE messages SET meta = ? WHERE id = ?').run(JSON.stringify(meta), id);
     }
+  }
+
+  toggleReaction(id: string, emoji: string): ChatMessage | null {
+    const existing = this.get(id);
+    if (!existing) return null;
+    const reactions = { ...(existing.reactions || {}) };
+    if (reactions[emoji]) delete reactions[emoji];
+    else reactions[emoji] = 1;
+    this.db
+      .prepare('UPDATE messages SET reactions = ? WHERE id = ?')
+      .run(Object.keys(reactions).length ? JSON.stringify(reactions) : null, id);
+    return this.get(id);
   }
 
   get(id: string): ChatMessage | null {
@@ -478,8 +515,8 @@ export class RoutineRepo {
     const token = uuid().replace(/-/g, '').slice(0, 24);
     this.db
       .prepare(
-        `INSERT INTO routines (id, agent_id, name, cron, prompt, enabled, quiet_if_empty, webhook_token, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO routines (id, agent_id, name, cron, prompt, enabled, quiet_if_empty, timezone, webhook_token, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -489,6 +526,7 @@ export class RoutineRepo {
         input.prompt,
         input.enabled === false ? 0 : 1,
         input.quietIfEmpty ? 1 : 0,
+        input.timezone ?? null,
         token,
         now
       );
@@ -498,14 +536,14 @@ export class RoutineRepo {
   update(
     id: string,
     patch: Partial<
-      Pick<Routine, 'name' | 'cron' | 'prompt' | 'enabled' | 'lastRunAt' | 'quietIfEmpty'>
+      Pick<Routine, 'name' | 'cron' | 'prompt' | 'enabled' | 'lastRunAt' | 'quietIfEmpty' | 'timezone'>
     >
   ): Routine | null {
     const existing = this.get(id);
     if (!existing) return null;
     this.db
       .prepare(
-        `UPDATE routines SET name = ?, cron = ?, prompt = ?, enabled = ?, quiet_if_empty = ?, last_run_at = ?
+        `UPDATE routines SET name = ?, cron = ?, prompt = ?, enabled = ?, quiet_if_empty = ?, timezone = ?, last_run_at = ?
          WHERE id = ?`
       )
       .run(
@@ -520,6 +558,7 @@ export class RoutineRepo {
           : existing.quietIfEmpty
             ? 1
             : 0,
+        patch.timezone !== undefined ? patch.timezone : (existing.timezone ?? null),
         patch.lastRunAt !== undefined ? patch.lastRunAt : (existing.lastRunAt ?? null),
         id
       );
@@ -538,20 +577,28 @@ export class RoutineRepo {
         `INSERT INTO routine_runs (id, routine_id, status, output, error, created_at) VALUES (?, ?, ?, ?, ?, ?)`
       )
       .run(id, routineId, status, output ?? null, error ?? null, createdAt);
+    this.db
+      .prepare(
+        `DELETE FROM routine_runs WHERE routine_id = ? AND id NOT IN (
+           SELECT id FROM routine_runs WHERE routine_id = ? ORDER BY created_at DESC LIMIT 20
+         )`
+      )
+      .run(routineId, routineId);
     return { id, routineId, status, output, error, createdAt };
   }
 
   listRuns(routineId?: string, limit = 50): RoutineRun[] {
+    const effectiveLimit = routineId ? Math.min(limit, 20) : limit;
     const rows = (
       routineId
         ? this.db
             .prepare(
               `SELECT * FROM routine_runs WHERE routine_id = ? ORDER BY created_at DESC LIMIT ?`
             )
-            .all(routineId, limit)
+            .all(routineId, effectiveLimit)
         : this.db
             .prepare(`SELECT * FROM routine_runs ORDER BY created_at DESC LIMIT ?`)
-            .all(limit)
+            .all(effectiveLimit)
     ) as Array<Record<string, unknown>>;
     return rows.map((r) => ({
       id: r.id as string,
@@ -583,6 +630,12 @@ export class SettingsRepo {
       accentColor: map.accentColor || '#8b5cf6',
       taskConcurrency: Number(map.taskConcurrency || '2') || 2,
       githubRepo: map.githubRepo || 'GregGirault/grok_bot_local',
+      timezone: map.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      localExecutionPolicy:
+        (map.localExecutionPolicy as Settings['localExecutionPolicy']) || 'ask',
+      autoReviewEnabled: map.autoReviewEnabled !== 'false',
+      autoReviewAskPatterns: parseStringArray(map.autoReviewAskPatterns),
+      autoReviewAllowPatterns: parseStringArray(map.autoReviewAllowPatterns),
     };
   }
 
@@ -592,7 +645,7 @@ export class SettingsRepo {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`
     );
     for (const [k, v] of Object.entries(partial)) {
-      if (v !== undefined) upsert.run(k, String(v));
+      if (v !== undefined) upsert.run(k, Array.isArray(v) ? JSON.stringify(v) : String(v));
     }
     return this.getAll();
   }
@@ -643,7 +696,7 @@ export class ChannelRepo {
 
   list(): Channel[] {
     const channels = this.db
-      .prepare('SELECT * FROM channels ORDER BY name')
+      .prepare('SELECT * FROM channels ORDER BY pinned DESC, name')
       .all() as Array<Record<string, unknown>>;
     return channels.map((c) => this.hydrate(c));
   }
@@ -664,6 +717,7 @@ export class ChannelRepo {
       name: r.name as string,
       description: r.description as string,
       memberIds: members.map((m) => m.agent_id),
+      pinned: Boolean(r.pinned),
       createdAt: r.created_at as string,
     };
   }
@@ -672,7 +726,7 @@ export class ChannelRepo {
     const id = uuid();
     const createdAt = new Date().toISOString();
     this.db
-      .prepare(`INSERT INTO channels (id, name, description, created_at) VALUES (?, ?, ?, ?)`)
+      .prepare(`INSERT INTO channels (id, name, description, pinned, created_at) VALUES (?, ?, ?, 0, ?)`)
       .run(id, name, description || '', createdAt);
     const insert = this.db.prepare(
       `INSERT OR IGNORE INTO channel_members (channel_id, agent_id) VALUES (?, ?)`
@@ -693,16 +747,38 @@ export class ChannelRepo {
       .run(channelId, agentId);
   }
 
-  postMessage(channelId: string, content: string, fromAgentId?: string): ChannelMessage {
+  update(
+    id: string,
+    patch: Partial<Pick<Channel, 'name' | 'description' | 'pinned'>>
+  ): Channel | null {
+    const existing = this.get(id);
+    if (!existing) return null;
+    this.db
+      .prepare('UPDATE channels SET name = ?, description = ?, pinned = ? WHERE id = ?')
+      .run(
+        patch.name ?? existing.name,
+        patch.description ?? existing.description,
+        patch.pinned !== undefined ? (patch.pinned ? 1 : 0) : existing.pinned ? 1 : 0,
+        id
+      );
+    return this.get(id);
+  }
+
+  postMessage(
+    channelId: string,
+    content: string,
+    fromAgentId?: string,
+    replyToId?: string
+  ): ChannelMessage {
     const id = uuid();
     const createdAt = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT INTO channel_messages (id, channel_id, from_agent_id, content, created_at)
-         VALUES (?, ?, ?, ?, ?)`
+        `INSERT INTO channel_messages (id, channel_id, from_agent_id, content, reply_to_id, reactions, created_at)
+         VALUES (?, ?, ?, ?, ?, NULL, ?)`
       )
-      .run(id, channelId, fromAgentId ?? null, content, createdAt);
-    return { id, channelId, fromAgentId, content, createdAt };
+      .run(id, channelId, fromAgentId ?? null, content, replyToId ?? null, createdAt);
+    return { id, channelId, fromAgentId, content, replyToId, createdAt };
   }
 
   listMessages(channelId: string, limit = 100): ChannelMessage[] {
@@ -717,8 +793,38 @@ export class ChannelRepo {
       channelId: r.channel_id as string,
       fromAgentId: (r.from_agent_id as string) || undefined,
       content: r.content as string,
+      replyToId: (r.reply_to_id as string) || undefined,
+      reactions: parseReactions(r.reactions),
       createdAt: r.created_at as string,
     }));
+  }
+
+  getMessage(id: string): ChannelMessage | null {
+    const r = this.db.prepare('SELECT * FROM channel_messages WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
+    if (!r) return null;
+    return {
+      id: r.id as string,
+      channelId: r.channel_id as string,
+      fromAgentId: (r.from_agent_id as string) || undefined,
+      content: r.content as string,
+      replyToId: (r.reply_to_id as string) || undefined,
+      reactions: parseReactions(r.reactions),
+      createdAt: r.created_at as string,
+    };
+  }
+
+  toggleReaction(id: string, emoji: string): ChannelMessage | null {
+    const existing = this.getMessage(id);
+    if (!existing) return null;
+    const reactions = { ...(existing.reactions || {}) };
+    if (reactions[emoji]) delete reactions[emoji];
+    else reactions[emoji] = 1;
+    this.db
+      .prepare('UPDATE channel_messages SET reactions = ? WHERE id = ?')
+      .run(Object.keys(reactions).length ? JSON.stringify(reactions) : null, id);
+    return this.getMessage(id);
   }
 
   delete(id: string): boolean {
@@ -1128,5 +1234,120 @@ export class UploadRepo {
       mime: (r.mime as string) || undefined,
       size: (r.size as number) || undefined,
     };
+  }
+}
+
+function parseStringArray(raw: string | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+export class SearchRepo {
+  constructor(private db: Db) {}
+
+  search(query: string, limit = 50): SearchResult[] {
+    const q = `%${query.toLowerCase()}%`;
+    const perType = Math.max(3, Math.min(20, Math.ceil(limit / 5)));
+    const results: SearchResult[] = [];
+
+    const agents = this.db
+      .prepare(
+        `SELECT id, name, title, description, updated_at FROM agents
+         WHERE lower(name) LIKE ? OR lower(title) LIKE ? OR lower(description) LIKE ?
+         ORDER BY pinned DESC, updated_at DESC LIMIT ?`
+      )
+      .all(q, q, q, perType) as Array<Record<string, unknown>>;
+    for (const r of agents) {
+      results.push({
+        type: 'agent',
+        id: r.id as string,
+        title: r.title as string,
+        subtitle: `@${r.name as string}`,
+        snippet: r.description as string,
+        target: `/chat/${r.id as string}`,
+        createdAt: r.updated_at as string,
+      });
+    }
+
+    const messages = this.db
+      .prepare(
+        `SELECT m.id, m.agent_id, m.content, m.created_at, a.name AS agent_name
+         FROM messages m JOIN agents a ON a.id = m.agent_id
+         WHERE lower(m.content) LIKE ?
+         ORDER BY m.created_at DESC LIMIT ?`
+      )
+      .all(q, perType) as Array<Record<string, unknown>>;
+    for (const r of messages) {
+      results.push({
+        type: 'message',
+        id: r.id as string,
+        title: `Message · @${r.agent_name as string}`,
+        snippet: String(r.content || '').slice(0, 240),
+        target: `/chat/${r.agent_id as string}?message=${encodeURIComponent(r.id as string)}`,
+        createdAt: r.created_at as string,
+      });
+    }
+
+    const channels = this.db
+      .prepare(
+        `SELECT id, name, description, created_at FROM channels
+         WHERE lower(name) LIKE ? OR lower(description) LIKE ?
+         ORDER BY pinned DESC, created_at DESC LIMIT ?`
+      )
+      .all(q, q, perType) as Array<Record<string, unknown>>;
+    for (const r of channels) {
+      results.push({
+        type: 'channel',
+        id: r.id as string,
+        title: `#${r.name as string}`,
+        snippet: r.description as string,
+        target: `/channels/${r.id as string}`,
+        createdAt: r.created_at as string,
+      });
+    }
+
+    const routines = this.db
+      .prepare(
+        `SELECT id, name, prompt, created_at FROM routines
+         WHERE lower(name) LIKE ? OR lower(prompt) LIKE ?
+         ORDER BY created_at DESC LIMIT ?`
+      )
+      .all(q, q, perType) as Array<Record<string, unknown>>;
+    for (const r of routines) {
+      results.push({
+        type: 'routine',
+        id: r.id as string,
+        title: r.name as string,
+        snippet: String(r.prompt || '').slice(0, 240),
+        target: '/routines',
+        createdAt: r.created_at as string,
+      });
+    }
+
+    const uploads = this.db
+      .prepare(
+        `SELECT id, name, path, mime, created_at FROM uploads
+         WHERE lower(name) LIKE ? ORDER BY created_at DESC LIMIT ?`
+      )
+      .all(q, perType) as Array<Record<string, unknown>>;
+    for (const r of uploads) {
+      results.push({
+        type: 'file',
+        id: r.id as string,
+        title: r.name as string,
+        subtitle: (r.mime as string) || 'file',
+        target: `/uploads/${encodeURIComponent(String(r.path).split(/[\\/]/).pop() || '')}`,
+        createdAt: r.created_at as string,
+      });
+    }
+
+    return results
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+      .slice(0, limit);
   }
 }

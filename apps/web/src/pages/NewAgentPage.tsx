@@ -45,7 +45,7 @@ export default function NewAgentPage({ onCreated }: { onCreated: () => void }) {
   };
 
   return (
-    <div className="h-full overflow-y-auto p-8 max-w-xl">
+    <div className="h-full overflow-y-auto p-4 sm:p-8 max-w-xl">
       <h1 className="text-2xl font-semibold mb-6">Create agent</h1>
       <form onSubmit={(e) => void submit(e)} className="space-y-4">
         <label className="block text-sm">
